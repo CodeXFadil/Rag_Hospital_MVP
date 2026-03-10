@@ -5,10 +5,11 @@ Structured retrieval from patients.csv using pandas.
 
 import os
 import pandas as pd
+from typing import Optional
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "patients.csv")
 
-_df: pd.DataFrame | None = None
+_df: Optional[pd.DataFrame] = None
 
 
 def _load_data() -> pd.DataFrame:
@@ -21,9 +22,9 @@ def _load_data() -> pd.DataFrame:
 
 
 def find_patient(
-    patient_id: str | None = None,
-    name: str | None = None,
-) -> list[dict]:
+    patient_id: Optional[str] = None,
+    name: Optional[str] = None,
+) -> list:
     """
     Look up patient records from structured data.
 
@@ -63,7 +64,7 @@ def find_patient(
     return records
 
 
-def find_patients_by_lab_threshold(lab_marker: str, condition: str, threshold: float) -> list[dict]:
+def find_patients_by_lab_threshold(lab_marker: str, condition: str, threshold: float) -> list:
     """
     Find patients where a specific lab marker exceeds / is below a threshold.
 

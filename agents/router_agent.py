@@ -7,6 +7,7 @@ The LLM classifies intent; entity extraction (patient ID/name) stays determinist
 import os
 import re
 import sys
+from typing import Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -97,13 +98,13 @@ def _classify_with_llm(query: str) -> str:
 
 # ── Deterministic entity extraction (no LLM) ───────────────────────────────────
 
-def _extract_patient_id(query: str) -> str | None:
+def _extract_patient_id(query: str) -> Optional[str]:
     """Extract a patient ID like P014 from the query string."""
     match = re.search(r"\bp(\d{3})\b", query, re.IGNORECASE)
     return match.group(0).upper() if match else None
 
 
-def _extract_patient_name(query: str) -> str | None:
+def _extract_patient_name(query: str) -> Optional[str]:
     """
     Heuristic name extraction: look for Title-Case word pairs after
     common trigger words, or just two consecutive capitalised words.
@@ -134,8 +135,8 @@ def classify_intent(query: str) -> dict:
         {
           "primary_intent":         str   — one of VALID_INTENTS
           "intents":                list  — [primary_intent]  (kept for coordinator compat)
-          "extracted_patient_id":   str | None
-          "extracted_patient_name": str | None
+          "extracted_patient_id":   Optional[str]
+          "extracted_patient_name": Optional[str]
         }
     """
     intent = _classify_with_llm(query)

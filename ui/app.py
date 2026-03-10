@@ -183,8 +183,8 @@ with st.sidebar:
         "Summarize patient P050.",
     ]
 
-    for eq in example_queries:
-        if st.button(eq, key=f"ex_{eq[:20]}", use_container_width=True):
+    for i, eq in enumerate(example_queries):
+        if st.button(eq, key=f"ex_btn_{i}", use_container_width=True):
             st.session_state["prefill_query"] = eq
 
     st.markdown("---")

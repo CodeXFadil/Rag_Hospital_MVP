@@ -4,7 +4,10 @@ Semantic similarity retrieval over ChromaDB clinical notes.
 """
 
 import os
+import sys
+
 import chromadb
+from typing import Optional
 from sentence_transformers import SentenceTransformer
 
 CHROMA_DIR = os.path.join(os.path.dirname(__file__), "..", "chroma_db")
@@ -12,8 +15,8 @@ COLLECTION_NAME = "clinical_notes"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 # Singleton model to avoid reloading on each call
-_model: SentenceTransformer | None = None
-_client: chromadb.PersistentClient | None = None
+_model: Optional[SentenceTransformer] = None
+_client: Optional[chromadb.PersistentClient] = None
 _collection = None
 
 
@@ -39,9 +42,9 @@ def _get_collection():
 
 def retrieve(
     query: str,
-    patient_id: str | None = None,
+    patient_id: Optional[str] = None,
     top_k: int = 4,
-) -> list[dict]:
+) -> list:
     """
     Retrieve the most relevant clinical note chunks for a query.
 

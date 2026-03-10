@@ -10,6 +10,7 @@ LLM is used in exactly two places:
 import os
 import sys
 import re
+from typing import Optional, List
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from dotenv import load_dotenv
@@ -43,7 +44,7 @@ def _get_llm_client() -> OpenAI:
 
 # ── Routing helpers ─────────────────────────────────────────────────────────────
 
-def _resolve_patients(intent: str, pid: str | None, pname: str | None, query: str) -> list[dict]:
+def _resolve_patients(intent: str, pid: Optional[str], pname: Optional[str], query: str) -> list:
     """
     Deterministically retrieve patient records based on intent.
     LLM never touches the database — all retrieval is pandas/CSV.

@@ -6,8 +6,10 @@ Run this once (or whenever data changes) to build / refresh the vector store.
 
 import os
 import sys
+
 import pandas as pd
 import chromadb
+
 from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 
