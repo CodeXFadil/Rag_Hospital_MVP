@@ -13,7 +13,7 @@ ROOT = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, ROOT)
 
 from dotenv import load_dotenv
-load_dotenv(os.path.join(ROOT, ".env"))
+load_dotenv(os.path.join(ROOT, ".env"), override=False)
 
 from agents.coordinator_agent import process_query
 from rag.vector_store import build_vector_store

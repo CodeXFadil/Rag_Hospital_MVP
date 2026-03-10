@@ -6,6 +6,11 @@ Semantic similarity retrieval over ChromaDB clinical notes.
 import os
 import sys
 
+# Streamlit Cloud (Linux) sqlite3 override for ChromaDB
+if sys.platform.startswith('linux'):
+    __import__('pysqlite3')
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
 import chromadb
 from typing import Optional
 from sentence_transformers import SentenceTransformer

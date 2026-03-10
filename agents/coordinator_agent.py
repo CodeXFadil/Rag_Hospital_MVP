@@ -16,6 +16,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from dotenv import load_dotenv
 from openai import OpenAI
 
+# Streamlit secrets support
+try:
+    import streamlit as st
+    HAS_STREAMLIT = True
+except ImportError:
+    HAS_STREAMLIT = False
+
 from agents.router_agent import (
     classify_intent,
     INTENT_PATIENT_LOOKUP,
@@ -37,9 +44,19 @@ DEFAULT_MODEL       = "meta-llama/llama-3-8b-instruct"
 
 
 def _get_llm_client() -> OpenAI:
-    if not OPENROUTER_API_KEY:
-        raise ValueError("OPENROUTER_API_KEY not set. Please add it to your .env file.")
-    return OpenAI(api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL)
+    api_key = OPENROUTER_API_KEY
+    
+    # Fallback to Streamlit secrets if running in Streamlit Cloud
+    if not api_key and HAS_STREAMLIT:
+        try:
+            api_key = st.secrets.get("OPENROUTER_API_KEY", "")
+        except FileNotFoundError:
+            pass
+
+    if not api_key:
+        raise ValueError("OPENROUTER_API_KEY not set. Please add it to your .env file or Streamlit app Secrets.")
+    return OpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL)
+
 
 
 # ── Routing helpers ─────────────────────────────────────────────────────────────
