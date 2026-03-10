@@ -1,40 +1,37 @@
 import os
 import sys
+import time
 
-# ── Entry Point Telemetry & Linux Fix ──────────────────────────────────────────
-print("[API] Starting Hospital RAG Assistant API...")
+# Force unbuffered output so logs show up immediately on Render
+def log(msg):
+    print(f"{msg}", flush=True)
 
-# SQLite3 override for ChromaDB on Linux (Render/Streamlit Cloud)
+log("[API] Script initiated...")
+
+# SQLite3 override for ChromaDB on Linux
 if sys.platform.startswith('linux'):
     try:
-        __import__('pysqlite3')
+        import pysqlite3
         sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-        print("[API] Successfully applied pysqlite3-binary patch for Linux.")
-    except ImportError:
-        print("[API] Warning: pysqlite3-binary not found. ChromaDB might fail on old Linux kernels.")
+        log("[API] SQLite patch applied.")
+    except Exception as e:
+        log(f"[API] SQLite patch skipped: {e}")
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-# Ensure project root is on path
+# Path setup
 ROOT = os.path.dirname(__file__)
 sys.path.insert(0, ROOT)
-
-print("[API] Loading environment and agents...")
-load_dotenv(os.path.join(ROOT, ".env"), override=False)
-
-from agents.coordinator_agent import process_query
-from rag.vector_store import build_vector_store
-print("[API] Agent modules loaded successfully.")
+load_dotenv(os.path.join(ROOT, ".env"))
 
 app = FastAPI(title="Hospital RAG Assistant API")
 
-# Allow CORS for the frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:8080", "*"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,20 +40,41 @@ app.add_middleware(
 class QueryRequest(BaseModel):
     query: str
 
+# Lazy-load the heavy stuff
+rag_pipeline = None
+
 @app.on_event("startup")
-def startup_event():
-    print("[API] Running startup procedures...")
-    # Initialize vector store if not present
-    chroma_path = os.path.join(ROOT, "chroma_db")
-    if not os.path.exists(chroma_path):
-        print("[API] Initializing pre-built vector store bounds...")
-        try:
-            build_vector_store(force_rebuild=False)
-        except Exception as e:
-            print(f"[API] Error: Could not auto-init vector store: {e}")
-    else:
-        print("[API] Pre-built chroma_db found. Skipping rebuild.")
-    print("[API] Startup complete. Server ready.")
+async def startup_event():
+    log("[API] Application startup event triggered.")
+    log(f"[API] Port: {os.environ.get('PORT', '8000')}")
+    # We don't load the RAG here yet to ensure the port binds INSTANTLY.
+    # The first request might be slow, but it's better than a timeout.
+    log("[API] Server is now listening. RAG will lazy-load on first request.")
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+@app.post("/api/chat")
+async def chat_endpoint(request: QueryRequest):
+    global rag_pipeline
+    try:
+        if rag_pipeline is None:
+            log("[API] Lazy-loading RAG pipeline...")
+            from agents.coordinator_agent import process_query
+            rag_pipeline = process_query
+            log("[API] RAG pipeline loaded.")
+        
+        result = rag_pipeline(request.query)
+        return result
+    except Exception as e:
+        log(f"[API] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 @app.post("/api/chat")
 async def chat_endpoint(request: QueryRequest):
