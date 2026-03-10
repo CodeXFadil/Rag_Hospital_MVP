@@ -73,8 +73,10 @@ async def chat_endpoint(request: QueryRequest):
 
 if __name__ == "__main__":
     import uvicorn
+    # Render sets the PORT environment variable automatically
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    log(f"[API] Manual uvicorn start on port {port}...")
+    uvicorn.run("api:app", host="0.0.0.0", port=port, log_level="info")
 
 @app.post("/api/chat")
 async def chat_endpoint(request: QueryRequest):
