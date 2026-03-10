@@ -3,7 +3,6 @@ __pycache__/
 *.pyc
 *.pyo
 vector_db/
-chroma_db/
 .DS_Store
 *.egg-info/
 dist/
