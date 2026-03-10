@@ -1,0 +1,164 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   HOSPITAL AI ASSISTANT — DESIGN SYSTEM
+   Medical-grade UI: clean whites, soft blues, clinical grays
+   All colors in HSL.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    /* Background & surface */
+    --background: 210 20% 98%;
+    --foreground: 220 25% 14%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 25% 14%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 25% 14%;
+
+    /* Primary: Medical blue */
+    --primary: 213 94% 43%;
+    --primary-foreground: 0 0% 100%;
+    --primary-light: 213 94% 96%;
+    --primary-muted: 213 60% 88%;
+
+    /* Secondary surfaces */
+    --secondary: 213 30% 95%;
+    --secondary-foreground: 220 25% 25%;
+
+    /* Muted / placeholder */
+    --muted: 210 18% 94%;
+    --muted-foreground: 215 16% 52%;
+
+    /* Accent: Teal */
+    --accent: 191 85% 40%;
+    --accent-foreground: 0 0% 100%;
+    --accent-light: 191 85% 95%;
+
+    /* Semantic: warnings */
+    --warning: 38 92% 50%;
+    --warning-foreground: 38 90% 20%;
+    --warning-light: 38 100% 94%;
+
+    /* Semantic: critical / destructive */
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-light: 0 90% 95%;
+
+    /* Semantic: success */
+    --success: 142 72% 35%;
+    --success-foreground: 0 0% 100%;
+    --success-light: 142 70% 94%;
+
+    /* Borders */
+    --border: 213 20% 89%;
+    --input: 213 20% 89%;
+    --ring: 213 94% 43%;
+
+    --radius: 0.75rem;
+
+    /* Sidebar */
+    --sidebar-background: 220 25% 12%;
+    --sidebar-foreground: 210 20% 80%;
+    --sidebar-primary: 213 94% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 22% 20%;
+    --sidebar-accent-foreground: 210 20% 90%;
+    --sidebar-border: 220 22% 18%;
+    --sidebar-ring: 213 94% 55%;
+
+    /* Chat bubbles */
+    --chat-user: 213 94% 43%;
+    --chat-user-foreground: 0 0% 100%;
+    --chat-ai: 0 0% 100%;
+    --chat-ai-foreground: 220 25% 14%;
+    --chat-ai-border: 213 20% 89%;
+
+    /* Gradients */
+    --gradient-hero: linear-gradient(135deg, hsl(213 94% 43%), hsl(191 85% 40%));
+    --gradient-card: linear-gradient(160deg, hsl(213 94% 96%), hsl(0 0% 100%));
+    --gradient-sidebar: linear-gradient(180deg, hsl(220 25% 12%), hsl(220 28% 9%));
+
+    /* Shadows */
+    --shadow-card: 0 1px 3px 0 hsl(213 40% 15% / 0.06), 0 4px 16px -2px hsl(213 40% 15% / 0.08);
+    --shadow-elevated: 0 4px 24px -4px hsl(213 94% 43% / 0.15), 0 1px 3px 0 hsl(213 40% 15% / 0.06);
+    --shadow-chat: 0 2px 12px -2px hsl(213 40% 15% / 0.1);
+  }
+
+  .dark {
+    --background: 220 25% 10%;
+    --foreground: 210 20% 92%;
+    --card: 220 25% 13%;
+    --card-foreground: 210 20% 92%;
+    --popover: 220 25% 13%;
+    --popover-foreground: 210 20% 92%;
+    --primary: 213 94% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 22% 18%;
+    --secondary-foreground: 210 20% 80%;
+    --muted: 220 22% 18%;
+    --muted-foreground: 215 16% 55%;
+    --accent: 191 85% 50%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 22% 20%;
+    --input: 220 22% 20%;
+    --ring: 213 94% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+}
+
+@layer utilities {
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+  .shadow-elevated {
+    box-shadow: var(--shadow-elevated);
+  }
+  .shadow-chat {
+    box-shadow: var(--shadow-chat);
+  }
+  .gradient-hero {
+    background: var(--gradient-hero);
+  }
+  .gradient-card {
+    background: var(--gradient-card);
+  }
+  .gradient-sidebar {
+    background: var(--gradient-sidebar);
+  }
+}
