@@ -177,7 +177,9 @@ with st.sidebar:
         "What concerns appear in Priya's doctor notes?",
         "Show lab results for Amit Kumar.",
         "Which patients have LDL above 150?",
-        "What is the visit history for patient P007?",
+        "Tell me about Rahul's diabetes condition.",
+        "How bad is Rahul Sharma's blood sugar?",
+        "Give me a summary of patient P012.",
         "Summarize patient P050.",
     ]
 
@@ -200,6 +202,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown(
         "<small style='color:#94a3b8'>Powered by ChromaDB + OpenRouter LLM<br>"
+        "Router: LLM-based intent classifier<br>"
         "Model: meta-llama/llama-3-8b-instruct</small>",
         unsafe_allow_html=True,
     )
@@ -247,7 +250,7 @@ with col_btn:
 
 # ── Process & display ──────────────────────────────────────────────────────────
 if submit and query.strip():
-    with st.spinner("🤖 Routing query through agents…"):
+    with st.spinner("🤖 LLM routing → retrieval → synthesis…"):
         result = process_query(query.strip())
 
     # Error handling
