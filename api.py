@@ -48,15 +48,18 @@ def warmup_task():
     is_warming_up = True
     try:
         start_time = time.time()
-        log("[WARMUP] Background thread starting: Pre-loading RAG components...")
+        log("[WARMUP] V3.3: Pre-loading RAG components...")
         
-        # This triggers agent and retriever imports
+        log("[WARMUP] Importing coordinator_agent...")
         from agents.coordinator_agent import process_query
+        log("[WARMUP] coordinator_agent imported.")
+        
         rag_pipeline = process_query
         
-        log(f"[WARMUP] RAG components imported. Initializing first-time retriever hit...")
-        # Optional: trigger first search to load model/chroma into memory
-        # process_query("Hello") 
+        log("[WARMUP] Initializing SentenceTransformer model...")
+        from rag.retriever import _get_model
+        _get_model() # Trigger actual loading
+        log("[WARMUP] SentenceTransformer model loaded.")
         
         log(f"[WARMUP] RAG completely ready in {time.time() - start_time:.2f}s")
     except Exception as e:
@@ -68,17 +71,17 @@ def warmup_task():
 
 @app.on_event("startup")
 async def startup_event():
-    log("[API] V3.2 LIVE: Application startup event triggered.")
+    log("[API] V3.3 LIVE: Application startup event triggered.")
     log(f"[API] Port: {os.environ.get('PORT', '8000')}")
     # Start background loading immediately
     threading.Thread(target=warmup_task, daemon=True).start()
-    log("[API] Server is now listening. V3.2 Warmup initiated.")
+    log("[API] Server is now listening. V3.3 Warmup initiated.")
 
 @app.get("/")
 def read_root():
     return {
         "message": "Hospital RAG API is running",
-        "version": "3.2",
+        "version": "3.3",
         "endpoints": ["/health", "/api/chat (POST)"]
     }
 
@@ -86,7 +89,7 @@ def read_root():
 def health():
     return {
         "status": "ok", 
-        "version": "3.2",
+        "version": "3.3",
         "rag_ready": rag_pipeline is not None,
         "warming_up": is_warming_up
     }
