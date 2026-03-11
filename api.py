@@ -125,12 +125,20 @@ async def chat_endpoint(request: QueryRequest):
                 from agents.coordinator_agent import process_query
                 rag_pipeline = process_query
 
+        t_process_start = time.time()
         result = rag_pipeline(request.query)
+        t_process_end = time.time()
+        
         if isinstance(result, dict) and result.get("error"):
             log(f"[API] Backend error: {result['error']}")
             raise HTTPException(status_code=500, detail=result["error"])
         
-        log(f"[API] Successfully processed query.")
+        # Add server-side overhead timing
+        if isinstance(result, dict) and "timings" in result:
+            result["timings"]["server_total"] = round(time.time() - t_process_start, 3)
+            log(f"[API] Timings: {result['timings']}")
+
+        log(f"[API] Successfully processed query in {time.time() - t_process_start:.2f}s")
         return result
     except Exception as e:
         log(f"[API] Exception during chat: {e}")

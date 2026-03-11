@@ -162,50 +162,59 @@ def _build_prompt(
 
 def process_query(query: str) -> dict:
     """
-    Full multi-agent pipeline:
-      LLM Router → Hybrid Retrieval → Clinical Rules → Context Builder → LLM Synthesizer
-
-    Returns dict with keys: intent, patients, notes, risk_flags, llm_response, error
+    Full multi-agent pipeline with timing logs.
     """
+    import time
+    start_total = time.time()
+    
     result = {
         "intent":       None,
         "patients":     [],
         "notes":        [],
         "risk_flags":   [],
         "llm_response": "",
+        "timings":      {},
         "error":        None,
     }
 
     try:
-        # ── Step 1: LLM Router (intent classification) ────────────────────────
+        # ── Step 1: LLM Router ──────────────────────────────────────────
+        t0 = time.time()
         intent_data = classify_intent(query)
+        result["timings"]["router_llm"] = round(time.time() - t0, 3)
         result["intent"] = intent_data
 
         intent = intent_data["primary_intent"]
         pid    = intent_data["extracted_patient_id"]
         pname  = intent_data["extracted_patient_name"]
 
-        # ── Step 2a: Structured retrieval (deterministic — pandas) ────────────
+        # ── Step 2a: Structured retrieval ──────────────────────────────
+        t1 = time.time()
         patients = _resolve_patients(intent, pid, pname, query)
+        result["timings"]["structured_retrieval"] = round(time.time() - t1, 3)
         result["patients"] = patients
 
-        # ── Step 2b: Semantic retrieval (deterministic — ChromaDB) ───────────
+        # ── Step 2b: Semantic retrieval ────────────────────────────────
+        t2 = time.time()
         notes = []
         if _should_call_notes_agent(intent) or not patients:
-            # Pin to single patient's notes when we have exactly one match
             note_pid = patients[0]["patient_id"] if len(patients) == 1 else None
             notes = get_relevant_notes(query=query, patient_id=note_pid, top_k=4)
+        result["timings"]["vector_search"] = round(time.time() - t2, 3)
         result["notes"] = notes
 
-        # ── Step 3: Clinical Rules Engine (deterministic) ─────────────────────
+        # ── Step 3: Clinical Rules ─────────────────────────────────────
+        t3 = time.time()
         if patients:
             if len(patients) == 1:
                 result["risk_flags"] = analyse_patient(patients[0])
             else:
                 for p in analyse_multiple_patients(patients):
                     result["risk_flags"].extend(p.get("risk_flags", []))
+        result["timings"]["clinical_rules"] = round(time.time() - t3, 3)
 
-        # ── Step 4: Context builder + LLM Synthesizer ─────────────────────────
+        # ── Step 4: LLM Synthesizer ────────────────────────────────────
+        t4 = time.time()
         system_prompt, user_message = _build_prompt(
             query=query,
             patients=patients,
@@ -223,6 +232,9 @@ def process_query(query: str) -> dict:
             ],
         )
         result["llm_response"] = response.choices[0].message.content
+        result["timings"]["synthesis_llm"] = round(time.time() - t4, 3)
+        
+        result["timings"]["total"] = round(time.time() - start_total, 3)
 
     except ValueError as e:
         result["error"] = str(e)
