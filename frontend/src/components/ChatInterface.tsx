@@ -1,10 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { AnimatePresence } from "framer-motion";
-import { Trash2, Bot, Sparkles } from "lucide-react";
+import { Trash2, Bot } from "lucide-react";
 import { ChatMessage, TypingIndicator, Message } from "@/components/ChatMessage";
 import { ChatInput } from "@/components/ChatInput";
 import { PatientSummary } from "@/components/PatientSummary";
-import { generateAIResponse, getPatientById } from "@/data/mockPatients";
 import type { Patient } from "@/data/mockPatients";
 
 interface ChatInterfaceProps {
@@ -142,10 +141,10 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
             <Bot className="w-4 h-4 text-primary-foreground" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-foreground">Chat Assistant</h2>
+            <h2 className="text-sm font-semibold text-foreground">Clinical Assistant</h2>
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-success animate-pulse-soft" />
-              <span className="text-xs text-muted-foreground">Online · Medical AI v2.1</span>
+              <span className="text-xs text-muted-foreground">LIVE BACKEND V3.0</span>
             </div>
           </div>
         </div>
