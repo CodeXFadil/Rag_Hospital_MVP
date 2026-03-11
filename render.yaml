@@ -9,6 +9,8 @@ services:
     envVars:
       - key: PORT
         value: 10000
+      - key: WEB_CONCURRENCY
+        value: "1"
       - key: PYTHON_UNBUFFERED
         value: "true"
       - key: OPENROUTER_API_KEY
