@@ -72,9 +72,9 @@ def warmup_task():
         gc.collect()
         log("[WARMUP] ChromaDB initialized.")
         
-        log(f"[WARMUP] V3.5: RAG completely ready in {time.time() - start_time:.2f}s")
+        log(f"[WARMUP] V3.6: RAG completely ready in {time.time() - start_time:.2f}s")
     except Exception as e:
-        log(f"[WARMUP] Error during V3.5 warmup: {e}")
+        log(f"[WARMUP] Error during V3.6 warmup: {e}")
         import traceback
         log(traceback.format_exc())
     finally:
@@ -82,17 +82,17 @@ def warmup_task():
 
 @app.on_event("startup")
 async def startup_event():
-    log("[API] V3.5 LIVE: Application startup event triggered.")
+    log("[API] V3.6 LIVE: Application startup event triggered.")
     log(f"[API] Port: {os.environ.get('PORT', '8000')}")
     # Start background loading immediately
     threading.Thread(target=warmup_task, daemon=True).start()
-    log("[API] Server is now listening. V3.5 Warmup initiated.")
+    log("[API] Server is now listening. V3.6 Initializing...")
 
 @app.get("/")
 def read_root():
     return {
-        "message": "Hospital RAG API is running (Ultra-Lite)",
-        "version": "3.5",
+        "message": "Hospital RAG API is running (Optimized for Railway)",
+        "version": "3.6",
         "endpoints": ["/health", "/api/chat (POST)"]
     }
 
@@ -100,7 +100,7 @@ def read_root():
 def health():
     return {
         "status": "ok", 
-        "version": "3.5",
+        "version": "3.6",
         "rag_ready": rag_pipeline is not None,
         "warming_up": is_warming_up
     }
