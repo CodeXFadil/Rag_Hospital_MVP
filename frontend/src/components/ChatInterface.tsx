@@ -38,7 +38,9 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
   const [isOnline, setIsOnline] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  // Normalize URL to prevent trailing slash issues
+  const rawUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const apiUrl = rawUrl.replace(/\/$/, "");
 
   // Check backend health on mount
   useEffect(() => {
@@ -51,14 +53,15 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
           setIsOnline(true);
         } else {
           setIsOnline(false);
+          setBackendVersion("OFFLINE");
         }
       } catch (err) {
         console.error("Backend offline:", err);
         setIsOnline(false);
+        setBackendVersion("CONNECT ERROR");
       }
     };
     checkHealth();
-    // Poll every 30 seconds
     const interval = setInterval(checkHealth, 30000);
     return () => clearInterval(interval);
   }, [apiUrl]);
@@ -71,7 +74,6 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
 
   const handleSubmit = useCallback(
     async (query: string) => {
-      // Add user message
       const userMsg: Message = {
         id: Date.now().toString(),
         role: "user",
@@ -90,7 +92,9 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
         });
         
         if (!response.ok) {
-          throw new Error("Failed to fetch from API");
+          const errorData = await response.json().catch(() => ({}));
+          const specificError = errorData.detail || `Server Error ${response.status}`;
+          throw new Error(specificError);
         }
         
         const data = await response.json();
@@ -137,12 +141,12 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
         };
         setMessages((prev) => [...prev, aiMsg]);
 
-      } catch (error) {
-        console.error(error);
+      } catch (error: any) {
+        console.error("Fetch error:", error);
         const errMsg: Message = {
           id: (Date.now() + 1).toString(),
           role: "assistant",
-          content: "❌ **Connection Error**\n\nFailed to connect to the backend API. Please ensure the Python FastAPI server is running.",
+          content: `❌ **Backend Error**\n\n${error.message || "Failed to connect to the backend server."}`,
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, errMsg]);
