@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import threading
 
 # Apply SQLite patch BEFORE anything else
 try:
@@ -38,32 +39,69 @@ app.add_middleware(
 class QueryRequest(BaseModel):
     query: str
 
-# Lazy-load the heavy stuff
+# Lazy-load the heavy stuff with background warmup
 rag_pipeline = None
+is_warming_up = False
+
+def warmup_task():
+    global rag_pipeline, is_warming_up
+    is_warming_up = True
+    try:
+        start_time = time.time()
+        log("[WARMUP] Background thread starting: Pre-loading RAG components...")
+        
+        # This triggers agent and retriever imports
+        from agents.coordinator_agent import process_query
+        rag_pipeline = process_query
+        
+        log(f"[WARMUP] RAG components imported. Initializing first-time retriever hit...")
+        # Optional: trigger first search to load model/chroma into memory
+        # process_query("Hello") 
+        
+        log(f"[WARMUP] RAG completely ready in {time.time() - start_time:.2f}s")
+    except Exception as e:
+        log(f"[WARMUP] Error during background loading: {e}")
+        import traceback
+        log(traceback.format_exc())
+    finally:
+        is_warming_up = False
 
 @app.on_event("startup")
 async def startup_event():
     log("[API] Application startup event triggered.")
     log(f"[API] Port: {os.environ.get('PORT', '8000')}")
-    log(f"[API] OpenRouter Key Set: {bool(os.environ.get('OPENROUTER_API_KEY'))}")
-    log("[API] Server is now listening. RAG will lazy-load on first request.")
+    # Start background loading immediately
+    threading.Thread(target=warmup_task, daemon=True).start()
+    log("[API] Server is now listening. Background warmup initiated.")
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "time": time.time(), "rag_loaded": rag_pipeline is not None}
+    return {
+        "status": "ok", 
+        "rag_ready": rag_pipeline is not None,
+        "warming_up": is_warming_up
+    }
 
 @app.post("/api/chat")
 async def chat_endpoint(request: QueryRequest):
     global rag_pipeline
     log(f"[API] Received query: {request.query[:50]}...")
+    
     try:
+        # Wait for warmup if it's still running (up to 30s to avoid Render timeout)
+        wait_start = time.time()
+        while rag_pipeline is None and is_warming_up and (time.time() - wait_start < 25):
+            log("[API] Warmup in progress, waiting...")
+            time.sleep(2)
+            
         if rag_pipeline is None:
-            start_time = time.time()
-            log("[API] First request: Lazy-loading RAG pipeline components...")
-            from agents.coordinator_agent import process_query
-            rag_pipeline = process_query
-            log(f"[API] RAG pipeline loaded in {time.time() - start_time:.2f}s")
-        
+            if is_warming_up:
+                raise HTTPException(status_code=503, detail="AI is still warming up. Please try again in a few seconds.")
+            else:
+                log("[API] RAG was never loaded. Attempting emergency load...")
+                from agents.coordinator_agent import process_query
+                rag_pipeline = process_query
+
         result = rag_pipeline(request.query)
         if isinstance(result, dict) and result.get("error"):
             log(f"[API] Backend error: {result['error']}")
@@ -79,8 +117,6 @@ async def chat_endpoint(request: QueryRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    # Render sets the PORT environment variable automatically
     port = int(os.environ.get("PORT", 8000))
     log(f"[API] Starting uvicorn on port {port}...")
-    # Using app object directly to ensure top-level code (sqlite patch) is already run
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
