@@ -20,7 +20,7 @@ from rag.vector_store import build_vector_store
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Hospital Patient Records Assistant",
+    page_title="Hospital RAG Assistant",
     page_icon="🏥",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -29,140 +29,208 @@ st.set_page_config(
 # ── Custom CSS ─────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
 
     html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Outfit', sans-serif !important;
+        background-color: #f8fafc;
     }
 
+    /* Premium Main Header */
     .main-header {
-        background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
-        padding: 2rem 2.5rem;
-        border-radius: 16px;
-        margin-bottom: 2rem;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        padding: 2.5rem 3rem;
+        border-radius: 20px;
+        margin-bottom: 2.5rem;
         color: white;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .main-header::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        background: radial-gradient(circle at top right, rgba(56, 189, 248, 0.15), transparent 50%);
+        pointer-events: none;
     }
 
     .main-header h1 {
-        font-size: 2.2rem;
+        font-size: 2.5rem;
         font-weight: 700;
         margin: 0;
         letter-spacing: -0.5px;
+        background: linear-gradient(to right, #ffffff, #94a3b8);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
     }
 
     .main-header p {
-        margin: 0.5rem 0 0 0;
-        opacity: 0.8;
-        font-size: 1rem;
+        margin: 0.75rem 0 0 0;
+        color: #94a3b8;
+        font-size: 1.1rem;
+        font-weight: 400;
     }
 
+    /* Cards & Components */
     .section-card {
-        background: #f8fafd;
+        background: #ffffff;
         border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 1.25rem 1.5rem;
-        margin-bottom: 1rem;
+        border-radius: 16px;
+        padding: 1.5rem;
+        margin-bottom: 1.25rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.025);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        color: #0f172a;
+    }
+
+    .section-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.025);
     }
 
     .section-card h3 {
-        font-size: 1rem;
+        font-size: 1.1rem;
         font-weight: 600;
-        color: #1e3a5f;
-        margin: 0 0 0.5rem 0;
+        color: #0f172a;
+        margin: 0 0 0.75rem 0;
     }
 
+    /* Risk Flags */
     .risk-flag-red {
-        background: #fff1f2;
+        background: linear-gradient(to right, #fef2f2, #fff1f2);
         border-left: 4px solid #ef4444;
-        padding: 0.6rem 1rem;
-        border-radius: 6px;
-        margin: 0.4rem 0;
-        font-size: 0.9rem;
+        padding: 1rem 1.25rem;
+        border-radius: 0 12px 12px 0;
+        margin: 0.75rem 0;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
 
     .risk-flag-amber {
-        background: #fffbeb;
+        background: linear-gradient(to right, #fffbeb, #fefce8);
         border-left: 4px solid #f59e0b;
-        padding: 0.6rem 1rem;
-        border-radius: 6px;
-        margin: 0.4rem 0;
-        font-size: 0.9rem;
+        padding: 1rem 1.25rem;
+        border-radius: 0 12px 12px 0;
+        margin: 0.75rem 0;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
 
+    .risk-flag-red strong { color: #991b1b; font-size: 1rem; }
+    .risk-flag-red small { color: #b91c1c; font-size: 0.9rem; display: block; margin-top: 0.25rem;}
+    .risk-flag-amber strong { color: #92400e; font-size: 1rem; }
+    .risk-flag-amber small { color: #b45309; font-size: 0.9rem; display: block; margin-top: 0.25rem; }
+
+    /* Badges */
     .intent-badge {
-        display: inline-block;
-        background: #dbeafe;
-        color: #1d4ed8;
+        display: inline-flex;
+        align-items: center;
+        background: #e0f2fe;
+        color: #0369a1;
         font-size: 0.75rem;
         font-weight: 600;
-        padding: 0.2rem 0.6rem;
-        border-radius: 999px;
-        margin-right: 0.4rem;
+        padding: 0.35rem 0.75rem;
+        border-radius: 9999px;
+        margin-right: 0.5rem;
         text-transform: uppercase;
         letter-spacing: 0.05em;
-    }
-
-    .note-chunk {
-        background: #f0fdf4;
-        border-left: 3px solid #22c55e;
-        padding: 0.6rem 1rem;
-        border-radius: 6px;
-        margin: 0.4rem 0;
-        font-size: 0.88rem;
-        color: #166534;
+        border: 1px solid #bae6fd;
     }
 
     .patient-badge {
-        background: #ede9fe;
-        color: #5b21b6;
-        display: inline-block;
-        padding: 0.15rem 0.5rem;
-        border-radius: 999px;
+        background: #f3e8ff;
+        color: #6b21a8;
+        display: inline-flex;
+        align-items: center;
+        padding: 0.25rem 0.6rem;
+        border-radius: 9999px;
         font-size: 0.75rem;
         font-weight: 600;
-        margin-right: 0.3rem;
+        margin-right: 0.4rem;
+        border: 1px solid #e9d5ff;
     }
 
+    /* Note Chunks */
+    .note-chunk {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-left: 4px solid #3b82f6;
+        padding: 1rem 1.25rem;
+        border-radius: 0 12px 12px 0;
+        margin: 0.75rem 0;
+        font-size: 0.95rem;
+        color: #334155;
+        line-height: 1.5;
+    }
+
+    /* Chat Elements overrides */
+    .stChatMessage {
+        background-color: transparent !important;
+        padding: 1rem 0;
+    }
+    
+    [data-testid="stChatMessageAvatarUser"] {
+        background-color: #3b82f6 !important;
+        color: white !important;
+    }
+    
+    [data-testid="stChatMessageAvatarAssistant"] {
+        background-color: #0f172a !important;
+        color: white !important;
+    }
+
+    /* General Button Styling */
     .stButton > button {
-        background: linear-gradient(135deg, #1d4ed8, #3b82f6);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 0.6rem 2rem;
-        font-weight: 600;
-        font-size: 1rem;
-        transition: all 0.2s;
-        width: 100%;
+        border-radius: 10px;
+        font-weight: 500;
+        transition: all 0.2s ease;
     }
-
-    .stButton > button:hover {
-        background: linear-gradient(135deg, #1e40af, #2563eb);
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    
+    /* Sidebar Styling */
+    [data-testid="stSidebar"] {
+        background-color: #f8fafc;
+        border-right: 1px solid #e2e8f0;
     }
-
-    .stTextArea textarea {
-        border-radius: 10px !important;
-        border: 1.5px solid #e2e8f0 !important;
-        font-family: 'Inter', sans-serif !important;
-        font-size: 0.95rem !important;
-        transition: border-color 0.2s;
+    
+    [data-testid="stSidebar"] .stButton > button {
+        background: white;
+        color: #334155;
+        border: 1px solid #cbd5e1;
+        justify-content: flex-start;
+        text-align: left;
+        padding: 0.5rem 1rem;
     }
-
-    .stTextArea textarea:focus {
-        border-color: #3b82f6 !important;
+    
+    [data-testid="stSidebar"] .stButton > button:hover {
+        background: #f1f5f9;
+        border-color: #94a3b8;
+        color: #0f172a;
     }
-
-    div[data-testid="stSidebar"] {
-        background: #0f2027;
-    }
-
-    div[data-testid="stSidebar"] .stMarkdown {
-        color: #e2e8f0;
-    }
+    
 </style>
 """, unsafe_allow_html=True)
 
+
+# ── Initialization ────────────────────────────────────────────────────────────
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# Ensure vector store is initialized on first run
+if "vs_initialized" not in st.session_state:
+    chroma_path = os.path.join(ROOT, "chroma_db")
+    if not os.path.exists(chroma_path):
+        with st.spinner("Initialising vector store on first run (this takes ~60 seconds)…"):
+            try:
+                build_vector_store(force_rebuild=False)
+                st.session_state["vs_initialized"] = True
+            except Exception as e:
+                st.warning(f"Could not auto-init vector store: {e}\nUse the sidebar button.")
+    else:
+        st.session_state["vs_initialized"] = True
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -179,17 +247,14 @@ with st.sidebar:
         "Which patients have LDL above 150?",
         "Tell me about Rahul's diabetes condition.",
         "How bad is Rahul Sharma's blood sugar?",
-        "Give me a summary of patient P012.",
-        "Summarize patient P050.",
     ]
 
     for i, eq in enumerate(example_queries):
-        if st.button(eq, key=f"ex_btn_{i}", use_container_width=True):
-            st.session_state["prefill_query"] = eq
+        if st.button(f"💬 {eq}", key=f"ex_btn_{i}", use_container_width=True):
+            st.session_state["example_triggered"] = eq
 
     st.markdown("---")
 
-    # Vector store management
     st.markdown("### ⚙️ Vector Store")
     if st.button("🔄 Build / Refresh Index", use_container_width=True):
         with st.spinner("Building vector index from patient notes…"):
@@ -200,69 +265,32 @@ with st.sidebar:
                 st.error(f"Error: {e}")
 
     st.markdown("---")
+    if st.button("🗑️ Clear Chat History", use_container_width=True):
+        st.session_state.messages = []
+        st.rerun()
+
+    st.markdown("---")
     st.markdown(
-        "<small style='color:#94a3b8'>Powered by ChromaDB + OpenRouter LLM<br>"
+        "<small style='color:#64748b'>Powered by ChromaDB + OpenRouter LLM<br>"
         "Router: LLM-based intent classifier<br>"
         "Model: meta-llama/llama-3-8b-instruct</small>",
         unsafe_allow_html=True,
     )
 
-
-# ── Main header ────────────────────────────────────────────────────────────────
+# ── Header ───────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="main-header">
-    <h1>🏥 Hospital Patient Records Assistant</h1>
-    <p>Multi-Agent RAG System · Hybrid Structured + Semantic Retrieval · Clinical Reasoning</p>
+    <h1>Hospital Patient Records Assistant</h1>
+    <p>Multi-Agent RAG System · Hybrid Retrieval · Clinical Reasoning</p>
 </div>
 """, unsafe_allow_html=True)
 
-
-# ── Auto-initialise vector store on first run ──────────────────────────────────
-if "vs_initialized" not in st.session_state:
-    chroma_path = os.path.join(ROOT, "chroma_db")
-    if not os.path.exists(chroma_path):
-        with st.spinner("Initialising vector store on first run (this takes ~60 seconds)…"):
-            try:
-                build_vector_store(force_rebuild=False)
-                st.session_state["vs_initialized"] = True
-            except Exception as e:
-                st.warning(f"Could not auto-init vector store: {e}\nUse the sidebar button.")
-    else:
-        st.session_state["vs_initialized"] = True
-
-
-# ── Query input ────────────────────────────────────────────────────────────────
-prefill = st.session_state.pop("prefill_query", "")
-
-col_input, col_btn = st.columns([5, 1])
-with col_input:
-    query = st.text_area(
-        "🔍 Enter your clinical query",
-        value=prefill,
-        height=80,
-        placeholder="e.g. 'Summarize patient P014' or 'Which patients have HbA1c above 8?'",
-        label_visibility="collapsed",
-    )
-with col_btn:
-    st.markdown("<br>", unsafe_allow_html=True)
-    submit = st.button("Ask →", use_container_width=True)
-
-
-# ── Process & display ──────────────────────────────────────────────────────────
-if submit and query.strip():
-    with st.spinner("🤖 LLM routing → retrieval → synthesis…"):
-        result = process_query(query.strip())
-
-    # Error handling
+# ── Helper to render assistant responses ──────────────────────────────────────
+def render_assistant_response(result):
+    """Renders the complex assistant response block correctly."""
     if result.get("error"):
         st.error(f"⚠️ {result['error']}")
-        if "OPENROUTER_API_KEY" in result["error"]:
-            st.info(
-                "**Setup required:** Create a `.env` file in the project root with:\n"
-                "```\nOPENROUTER_API_KEY=your_key_here\n```\n"
-                "Get your key at [openrouter.ai](https://openrouter.ai)"
-            )
-        st.stop()
+        return
 
     intent = result.get("intent", {})
     patients = result.get("patients", [])
@@ -270,24 +298,23 @@ if submit and query.strip():
     risk_flags = result.get("risk_flags", [])
     llm_response = result.get("llm_response", "")
 
-    # ── Intent badges ──────────────────────────────────────────────────────────
-    intent_html = " ".join(
-        f'<span class="intent-badge">{i.replace("_", " ")}</span>'
-        for i in intent.get("intents", [])
-    )
-    st.markdown(f"<div style='margin-bottom:1rem;'>Detected: {intent_html}</div>", unsafe_allow_html=True)
+    # Intent badges
+    if intent.get("intents"):
+        intent_html = " ".join(
+            f'<span class="intent-badge">{i.replace("_", " ")}</span>'
+            for i in intent.get("intents", [])
+        )
+        st.markdown(f"<div style='margin-bottom:1rem;'>{intent_html}</div>", unsafe_allow_html=True)
 
-    # ── Main response (LLM) ────────────────────────────────────────────────────
+    # Main response (LLM)
     if llm_response:
-        st.markdown("### 📋 Clinical Response")
         st.markdown(
-            f"<div class='section-card'>{llm_response.replace(chr(10), '<br>')}</div>",
+            f"<div class='section-card'><strong>Clinical Synthesis</strong><br><br>{llm_response.replace(chr(10), '<br>')}</div>",
             unsafe_allow_html=True,
         )
 
-    # ── Risk flags ─────────────────────────────────────────────────────────────
+    # Risk flags
     if risk_flags:
-        st.markdown("### 🚨 Risk Indicators")
         for flag in risk_flags:
             css_class = "risk-flag-red" if "🔴" in flag["flag"] else "risk-flag-amber"
             st.markdown(
@@ -296,14 +323,11 @@ if submit and query.strip():
                 unsafe_allow_html=True,
             )
 
-    # ── Patient summary cards ──────────────────────────────────────────────────
+    # Patient Details Cards
     if patients:
-        st.markdown("### 👤 Patient Summary")
+        st.markdown("<h4 style='color:#334155; margin-top:1.5rem; margin-bottom:1rem;'>👤 Patient Profiles</h4>", unsafe_allow_html=True)
         for p in patients[:5]:
-            with st.expander(
-                f"**{p['name']}** · {p['patient_id']} · Age {p['age']} · {p['gender']}",
-                expanded=(len(patients) == 1),
-            ):
+            with st.expander(f"**{p['name']}** · ID: {p['patient_id']} · Age: {p['age']} · {p['gender']}", expanded=True):
                 col1, col2 = st.columns(2)
                 with col1:
                     st.markdown("**Diagnoses**")
@@ -316,28 +340,49 @@ if submit and query.strip():
                     st.markdown("**Visit History**")
                     st.info(p["visit_history"])
 
-    # ── Retrieved clinical notes ───────────────────────────────────────────────
+    # Retrieved Notes
     if notes and any(n.get("score", 0) > 0.1 for n in notes):
-        st.markdown("### 📄 Retrieved Clinical Notes")
+        st.markdown("<h4 style='color:#334155; margin-top:1.5rem; margin-bottom:1rem;'>📄 Relevant Clinical Notes</h4>", unsafe_allow_html=True)
         for n in notes:
             if n.get("score", 0) > 0.1:
                 score_pct = int(n["score"] * 100)
                 st.markdown(
                     f"<div class='note-chunk'>"
+                    f"<div style='margin-bottom:0.5rem;'>"
                     f"<span class='patient-badge'>{n['patient_id']} – {n['name']}</span> "
-                    f"<small style='color:#6b7280'>Relevance: {score_pct}%</small><br>"
+                    f"<small style='color:#64748b; font-weight:500;'>Match Relevance: {score_pct}%</small>"
+                    f"</div>"
                     f"{n['text']}</div>",
                     unsafe_allow_html=True,
                 )
 
-    # ── Debug expander ─────────────────────────────────────────────────────────
-    with st.expander("🔧 Agent Debug Info", expanded=False):
-        st.json({
-            "routing": intent,
-            "patients_found": len(patients),
-            "notes_retrieved": len(notes),
-            "risk_flags_raised": len(risk_flags),
-        })
+# ── Chat rendering loop ───────────────────────────────────────────────────────
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        if msg["role"] == "user":
+            st.markdown(msg["content"])
+        else:
+            render_assistant_response(msg["result"])
 
-elif submit and not query.strip():
-    st.warning("Please enter a query before submitting.")
+# ── Input processing ──────────────────────────────────────────────────────────
+query = st.chat_input("🔍 Ask a clinical question (e.g. 'Summarize patient P014')...")
+
+# If example was clicked in sidebar, use it as query
+if "example_triggered" in st.session_state:
+    query = st.session_state.pop("example_triggered")
+
+
+if query:
+    # 1. Append and render user message
+    st.session_state.messages.append({"role": "user", "content": query})
+    with st.chat_message("user"):
+        st.markdown(query)
+
+    # 2. Process query and render assistant output
+    with st.chat_message("assistant"):
+        with st.spinner("🤖 Analyzing clinical query..."):
+            result = process_query(query)
+            st.session_state.messages.append({"role": "assistant", "result": result})
+            render_assistant_response(result)
+            st.rerun()
+

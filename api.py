@@ -1,6 +1,10 @@
 import os
 import sys
 import time
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from dotenv import load_dotenv
 
 # Force unbuffered output so logs show up immediately on Render
 def log(msg):
@@ -17,13 +21,8 @@ if sys.platform.startswith('linux'):
     except Exception as e:
         log(f"[API] SQLite patch skipped: {e}")
 
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from dotenv import load_dotenv
-
 # Path setup
-ROOT = os.path.dirname(__file__)
+ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 load_dotenv(os.path.join(ROOT, ".env"))
 
@@ -47,8 +46,6 @@ rag_pipeline = None
 async def startup_event():
     log("[API] Application startup event triggered.")
     log(f"[API] Port: {os.environ.get('PORT', '8000')}")
-    # We don't load the RAG here yet to ensure the port binds INSTANTLY.
-    # The first request might be slow, but it's better than a timeout.
     log("[API] Server is now listening. RAG will lazy-load on first request.")
 
 @app.get("/health")
@@ -66,31 +63,19 @@ async def chat_endpoint(request: QueryRequest):
             log("[API] RAG pipeline loaded.")
         
         result = rag_pipeline(request.query)
+        if isinstance(result, dict) and result.get("error"):
+            log(f"[API] Backend error: {result['error']}")
+            raise HTTPException(status_code=500, detail=result["error"])
         return result
     except Exception as e:
-        log(f"[API] Error: {e}")
+        log(f"[API] Exception during chat: {e}")
+        import traceback
+        log(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
     # Render sets the PORT environment variable automatically
     port = int(os.environ.get("PORT", 8000))
-    log(f"[API] Manual uvicorn start on port {port}...")
+    log(f"[API] Starting uvicorn on port {port}...")
     uvicorn.run("api:app", host="0.0.0.0", port=port, log_level="info")
-
-@app.post("/api/chat")
-async def chat_endpoint(request: QueryRequest):
-    try:
-        # Pass the query to the RAG backend
-        result = process_query(request.query)
-        if result.get("error"):
-            raise HTTPException(status_code=500, detail=result["error"])
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-if __name__ == "__main__":
-    import uvicorn
-    # uvicorn api:app --reload
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
