@@ -7,7 +7,7 @@ import sys, os
 from typing import Optional
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from rag.retriever import retrieve
+# from rag.retriever import retrieve - moved inside function
 
 
 def get_relevant_notes(
@@ -27,6 +27,7 @@ def get_relevant_notes(
         List of dicts: {text, patient_id, name, score}
     """
     try:
+        from rag.retriever import retrieve
         results = retrieve(query=query, patient_id=patient_id, top_k=top_k)
         return results
     except RuntimeError as e:

@@ -4,7 +4,7 @@ Structured retrieval from patients.csv using pandas.
 """
 
 import os
-import pandas as pd
+# import pandas as pd - moved inside functions
 from typing import Optional
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "patients.csv")
@@ -15,6 +15,7 @@ _df: Optional[pd.DataFrame] = None
 def _load_data() -> pd.DataFrame:
     global _df
     if _df is None:
+        import pandas as pd
         _df = pd.read_csv(DATA_PATH)
         _df["patient_id_upper"] = _df["patient_id"].str.upper().str.strip()
         _df["name_lower"] = _df["name"].str.lower().str.strip()

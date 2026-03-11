@@ -19,38 +19,52 @@ except ImportError:
     except Exception:
         pass
 
-import chromadb
 from typing import Optional
-from sentence_transformers import SentenceTransformer
 
 CHROMA_DIR = os.path.join(os.path.dirname(__file__), "..", "chroma_db")
 COLLECTION_NAME = "clinical_notes"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
-# Singleton model to avoid reloading on each call
-_model: Optional[SentenceTransformer] = None
-_client: Optional[chromadb.PersistentClient] = None
-_collection = None
+# Globals for caching load results
+_model_cache = None
+_client_cache = None
 
 
-def _get_model() -> SentenceTransformer:
-    global _model
-    if _model is None:
-        _model = SentenceTransformer(EMBEDDING_MODEL)
-    return _model
+def _get_model():
+    """Lazy load the embedding model to save memory during import."""
+    global _model_cache
+    if _model_cache is None:
+        print("[RETRIEVER] Loading SentenceTransformer...")
+        from sentence_transformers import SentenceTransformer
+        _model_cache = SentenceTransformer(EMBEDDING_MODEL)
+        print("[RETRIEVER] Model loaded.")
+    return _model_cache
 
 
 def _get_collection():
-    global _client, _collection
-    if _collection is None:
-        _client = chromadb.PersistentClient(path=CHROMA_DIR)
-        existing = [c.name for c in _client.list_collections()]
-        if COLLECTION_NAME not in existing:
-            raise RuntimeError(
-                "Vector store not initialized. Please run: python rag/vector_store.py"
-            )
-        _collection = _client.get_collection(COLLECTION_NAME)
-    return _collection
+    """Lazy load ChromaDB and get collection."""
+    global _client_cache
+    if _client_cache is None:
+        print("[RETRIEVER] Initializing ChromaDB (with SQLite patch)...")
+        try:
+            from patch_sqlite import apply_patch
+            apply_patch()
+        except ImportError:
+            pass
+            
+        import chromadb
+        _client_cache = chromadb.PersistentClient(path=CHROMA_DIR)
+        print("[RETRIEVER] ChromaDB initialized.")
+    
+    # The original code checked for existence and raised an error.
+    # get_or_create_collection would create it if not found.
+    # To maintain original behavior of raising an error if not initialized:
+    existing = [c.name for c in _client_cache.list_collections()]
+    if COLLECTION_NAME not in existing:
+        raise RuntimeError(
+            "Vector store not initialized. Please run: python rag/vector_store.py"
+        )
+    return _client_cache.get_collection(COLLECTION_NAME)
 
 
 def retrieve(

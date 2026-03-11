@@ -48,22 +48,26 @@ def warmup_task():
     is_warming_up = True
     try:
         start_time = time.time()
-        log("[WARMUP] V3.3: Pre-loading RAG components...")
+        log("[WARMUP] V3.4: Starting optimized lazy-load sequence...")
         
-        log("[WARMUP] Importing coordinator_agent...")
+        log("[WARMUP] Importing coordinator_agent (no heavy AI yet)...")
         from agents.coordinator_agent import process_query
-        log("[WARMUP] coordinator_agent imported.")
-        
         rag_pipeline = process_query
+        log("[WARMUP] coordinator_agent mapped.")
         
-        log("[WARMUP] Initializing SentenceTransformer model...")
+        log("[WARMUP] Triggering first-time model load (HEAVY STEP)...")
         from rag.retriever import _get_model
-        _get_model() # Trigger actual loading
-        log("[WARMUP] SentenceTransformer model loaded.")
+        _get_model() 
+        log("[WARMUP] SentenceTransformer loaded.")
         
-        log(f"[WARMUP] RAG completely ready in {time.time() - start_time:.2f}s")
+        log("[WARMUP] Triggering ChromaDB initialization...")
+        from rag.retriever import _get_collection
+        _get_collection()
+        log("[WARMUP] ChromaDB initialized.")
+        
+        log(f"[WARMUP] V3.4: RAG completely ready in {time.time() - start_time:.2f}s")
     except Exception as e:
-        log(f"[WARMUP] Error during background loading: {e}")
+        log(f"[WARMUP] Error during V3.4 warmup: {e}")
         import traceback
         log(traceback.format_exc())
     finally:
@@ -71,17 +75,17 @@ def warmup_task():
 
 @app.on_event("startup")
 async def startup_event():
-    log("[API] V3.3 LIVE: Application startup event triggered.")
+    log("[API] V3.4 LIVE: Application startup event triggered.")
     log(f"[API] Port: {os.environ.get('PORT', '8000')}")
     # Start background loading immediately
     threading.Thread(target=warmup_task, daemon=True).start()
-    log("[API] Server is now listening. V3.3 Warmup initiated.")
+    log("[API] Server is now listening. V3.4 Warmup initiated.")
 
 @app.get("/")
 def read_root():
     return {
         "message": "Hospital RAG API is running",
-        "version": "3.3",
+        "version": "3.4",
         "endpoints": ["/health", "/api/chat (POST)"]
     }
 
@@ -89,7 +93,7 @@ def read_root():
 def health():
     return {
         "status": "ok", 
-        "version": "3.3",
+        "version": "3.4",
         "rag_ready": rag_pipeline is not None,
         "warming_up": is_warming_up
     }
