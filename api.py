@@ -68,16 +68,25 @@ def warmup_task():
 
 @app.on_event("startup")
 async def startup_event():
-    log("[API] Application startup event triggered.")
+    log("[API] V3.2 LIVE: Application startup event triggered.")
     log(f"[API] Port: {os.environ.get('PORT', '8000')}")
     # Start background loading immediately
     threading.Thread(target=warmup_task, daemon=True).start()
-    log("[API] Server is now listening. Background warmup initiated.")
+    log("[API] Server is now listening. V3.2 Warmup initiated.")
+
+@app.get("/")
+def read_root():
+    return {
+        "message": "Hospital RAG API is running",
+        "version": "3.2",
+        "endpoints": ["/health", "/api/chat (POST)"]
+    }
 
 @app.get("/health")
 def health():
     return {
         "status": "ok", 
+        "version": "3.2",
         "rag_ready": rag_pipeline is not None,
         "warming_up": is_warming_up
     }
