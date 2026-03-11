@@ -5,14 +5,14 @@ Structured retrieval from patients.csv using pandas.
 
 import os
 # import pandas as pd - moved inside functions
-from typing import Optional
+from typing import Optional, Any
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "patients.csv")
 
-_df: Optional[pd.DataFrame] = None
+_df: Any = None
 
 
-def _load_data() -> pd.DataFrame:
+def _load_data() -> Any:
     global _df
     if _df is None:
         import pandas as pd
@@ -99,6 +99,6 @@ def find_patients_by_lab_threshold(lab_marker: str, condition: str, threshold: f
     return results
 
 
-def get_all_patients() -> pd.DataFrame:
+def get_all_patients() -> Any:
     """Return the full patient dataframe."""
     return _load_data()
