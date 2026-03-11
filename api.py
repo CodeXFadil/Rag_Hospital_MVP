@@ -1,6 +1,14 @@
 import os
 import sys
 import time
+
+# Apply SQLite patch BEFORE anything else
+try:
+    from patch_sqlite import apply_patch
+    apply_patch()
+except Exception as e:
+    print(f"[API] Failed to import/apply patch: {e}", flush=True)
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -11,15 +19,6 @@ def log(msg):
     print(f"{msg}", flush=True)
 
 log("[API] Script initiated...")
-
-# SQLite3 override for ChromaDB on Linux
-if sys.platform.startswith('linux'):
-    try:
-        import pysqlite3
-        sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-        log("[API] SQLite patch applied.")
-    except Exception as e:
-        log(f"[API] SQLite patch skipped: {e}")
 
 # Path setup
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -46,26 +45,31 @@ rag_pipeline = None
 async def startup_event():
     log("[API] Application startup event triggered.")
     log(f"[API] Port: {os.environ.get('PORT', '8000')}")
+    log(f"[API] OpenRouter Key Set: {bool(os.environ.get('OPENROUTER_API_KEY'))}")
     log("[API] Server is now listening. RAG will lazy-load on first request.")
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "time": time.time(), "rag_loaded": rag_pipeline is not None}
 
 @app.post("/api/chat")
 async def chat_endpoint(request: QueryRequest):
     global rag_pipeline
+    log(f"[API] Received query: {request.query[:50]}...")
     try:
         if rag_pipeline is None:
-            log("[API] Lazy-loading RAG pipeline...")
+            start_time = time.time()
+            log("[API] First request: Lazy-loading RAG pipeline components...")
             from agents.coordinator_agent import process_query
             rag_pipeline = process_query
-            log("[API] RAG pipeline loaded.")
+            log(f"[API] RAG pipeline loaded in {time.time() - start_time:.2f}s")
         
         result = rag_pipeline(request.query)
         if isinstance(result, dict) and result.get("error"):
             log(f"[API] Backend error: {result['error']}")
             raise HTTPException(status_code=500, detail=result["error"])
+        
+        log(f"[API] Successfully processed query.")
         return result
     except Exception as e:
         log(f"[API] Exception during chat: {e}")
@@ -78,4 +82,5 @@ if __name__ == "__main__":
     # Render sets the PORT environment variable automatically
     port = int(os.environ.get("PORT", 8000))
     log(f"[API] Starting uvicorn on port {port}...")
-    uvicorn.run("api:app", host="0.0.0.0", port=port, log_level="info")
+    # Using app object directly to ensure top-level code (sqlite patch) is already run
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

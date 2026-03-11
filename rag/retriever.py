@@ -6,10 +6,18 @@ Semantic similarity retrieval over ChromaDB clinical notes.
 import os
 import sys
 
-# Streamlit Cloud (Linux) sqlite3 override for ChromaDB
-if sys.platform.startswith('linux'):
-    __import__('pysqlite3')
-    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+# Try to apply SQLite patch
+try:
+    from patch_sqlite import apply_patch
+    apply_patch()
+except ImportError:
+    # If called from a subfolder, we might need to adjust Path
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    try:
+        from patch_sqlite import apply_patch
+        apply_patch()
+    except Exception:
+        pass
 
 import chromadb
 from typing import Optional
