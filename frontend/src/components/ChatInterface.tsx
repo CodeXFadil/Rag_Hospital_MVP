@@ -34,7 +34,34 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>(welcomeMessages);
   const [isLoading, setIsLoading] = useState(false);
   const [activePatient, setActivePatient] = useState<Patient | null>(null);
+  const [backendVersion, setBackendVersion] = useState<string>("V3.0");
+  const [isOnline, setIsOnline] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+  // Check backend health on mount
+  useEffect(() => {
+    const checkHealth = async () => {
+      try {
+        const res = await fetch(`${apiUrl}/health`);
+        if (res.ok) {
+          const data = await res.json();
+          setBackendVersion(data.version || "V3.6");
+          setIsOnline(true);
+        } else {
+          setIsOnline(false);
+        }
+      } catch (err) {
+        console.error("Backend offline:", err);
+        setIsOnline(false);
+      }
+    };
+    checkHealth();
+    // Poll every 30 seconds
+    const interval = setInterval(checkHealth, 30000);
+    return () => clearInterval(interval);
+  }, [apiUrl]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -56,7 +83,6 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
       onQueryAdded(query);
 
       try {
-        const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
         const response = await fetch(`${apiUrl}/api/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -116,7 +142,7 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
         const errMsg: Message = {
           id: (Date.now() + 1).toString(),
           role: "assistant",
-          content: "❌ **Connection Error**\n\nFailed to connect to the backend API. Please ensure the Python FastAPI server is running (`uvicorn api:app --reload`).",
+          content: "❌ **Connection Error**\n\nFailed to connect to the backend API. Please ensure the Python FastAPI server is running.",
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, errMsg]);
@@ -124,7 +150,7 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
       
       setIsLoading(false);
     },
-    [onQueryAdded]
+    [onQueryAdded, apiUrl]
   );
 
   const handleClear = () => {
@@ -143,8 +169,10 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
           <div>
             <h2 className="text-sm font-semibold text-foreground">Clinical Assistant</h2>
             <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-success animate-pulse-soft" />
-              <span className="text-xs text-muted-foreground">LIVE BACKEND V3.0</span>
+              <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-success animate-pulse-soft' : 'bg-destructive'}`} />
+              <span className="text-xs text-muted-foreground uppercase">
+                {isOnline ? `LIVE BACKEND ${backendVersion}` : "BACKEND OFFLINE"}
+              </span>
             </div>
           </div>
         </div>
