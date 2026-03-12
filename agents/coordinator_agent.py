@@ -10,7 +10,7 @@ LLM is used in exactly two places:
 import os
 import sys
 import re
-from typing import Optional, List
+from typing import Optional, List, Dict, Tuple
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from dotenv import load_dotenv
@@ -103,10 +103,10 @@ def _should_call_notes_agent(intent: str) -> bool:
 
 def _build_prompt(
     query: str,
-    patients: list[dict],
-    notes: list[dict],
-    risk_flags: list[dict],
-) -> tuple[str, str]:
+    patients: List[Dict],
+    notes: List[Dict],
+    risk_flags: List[Dict],
+) -> Tuple[str, str]:
     """Assemble the system + user messages for final LLM synthesis."""
     sections = []
 
@@ -122,9 +122,8 @@ def _build_prompt(
             )
         sections.append("=== STRUCTURED PATIENT DATA ===\n" + "\n\n".join(patient_ctx))
 
-    if notes:
         notes_ctx = [
-            f"[{n['patient_id']} – {n['name']}] {n['text']}"
+            f"[{n['patient_id']} - {n['name']}] {n['text']}"
             for n in notes[:4]
         ]
         sections.append("=== RETRIEVED CLINICAL NOTES ===\n" + "\n\n".join(notes_ctx))
@@ -239,6 +238,8 @@ def process_query(query: str) -> dict:
     except ValueError as e:
         result["error"] = str(e)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         result["error"] = f"Pipeline error: {str(e)}"
 
     return result

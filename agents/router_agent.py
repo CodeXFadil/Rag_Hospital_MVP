@@ -7,7 +7,7 @@ The LLM classifies intent; entity extraction (patient ID/name) stays determinist
 import os
 import re
 import sys
-from typing import Optional
+from typing import Optional, Dict
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -127,7 +127,7 @@ def _extract_patient_name(query: str) -> Optional[str]:
 
 # ── Public API ──────────────────────────────────────────────────────────────────
 
-def classify_intent(query: str) -> dict:
+def classify_intent(query: str) -> Dict:
     """
     Classify the user query and extract relevant entities.
 

@@ -5,6 +5,7 @@ Never fabricates information – only reasons over retrieved data.
 """
 
 import re
+from typing import List, Dict
 
 
 # ── Clinical thresholds ────────────────────────────────────────────────────────
@@ -92,7 +93,7 @@ RULES = [
 ]
 
 
-def analyse_patient(patient_data: dict) -> list[dict]:
+def analyse_patient(patient_data: Dict) -> List[Dict]:
     """
     Run clinical rules over a single patient's lab_results string.
 
@@ -133,7 +134,7 @@ def analyse_patient(patient_data: dict) -> list[dict]:
     return flags
 
 
-def analyse_multiple_patients(patients: list[dict]) -> list[dict]:
+def analyse_multiple_patients(patients: List[Dict]) -> List[Dict]:
     """
     Analyse a list of patients and return those with risk flags.
 

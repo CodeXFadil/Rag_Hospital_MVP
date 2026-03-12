@@ -4,7 +4,7 @@ Retrieves relevant clinical notes from ChromaDB using semantic search.
 """
 
 import sys, os
-from typing import Optional
+from typing import Optional, List, Dict
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # from rag.retriever import retrieve - moved inside function
@@ -14,7 +14,7 @@ def get_relevant_notes(
     query: str,
     patient_id: Optional[str] = None,
     top_k: int = 4,
-) -> list:
+) -> List[Dict]:
     """
     Fetch semantically relevant clinical note chunks for the query.
 

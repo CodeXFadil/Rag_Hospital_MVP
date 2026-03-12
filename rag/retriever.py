@@ -19,7 +19,7 @@ except ImportError:
     except Exception:
         pass
 
-from typing import Optional
+from typing import Optional, List, Dict
 
 CHROMA_DIR = os.path.join(os.path.dirname(__file__), "..", "chroma_db")
 COLLECTION_NAME = "clinical_notes"
@@ -71,7 +71,7 @@ def retrieve(
     query: str,
     patient_id: Optional[str] = None,
     top_k: int = 4,
-) -> list:
+) -> List[Dict]:
     """
     Retrieve the most relevant clinical note chunks for a query.
 
