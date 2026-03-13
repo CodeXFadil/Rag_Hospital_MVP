@@ -96,13 +96,15 @@ def _resolve_patients(intent: str, pid: Optional[str], pname: Optional[str], que
 
 def _should_call_notes_agent(intent: str) -> bool:
     """Return True for intents that benefit from semantic note retrieval."""
-    return intent in {INTENT_NOTES, INTENT_SUMMARY}
+    # Almost all clinical queries benefit from checking doctor notes for context
+    return intent in {INTENT_NOTES, INTENT_SUMMARY, INTENT_MEDICATION, INTENT_LAB}
 
 
 # ── Prompt builder ──────────────────────────────────────────────────────────────
 
 def _build_prompt(
     query: str,
+    intent: str,
     patients: List[Dict],
     notes: List[Dict],
     risk_flags: List[Dict],
@@ -134,24 +136,46 @@ def _build_prompt(
 
     context_block = "\n\n".join(sections) if sections else "No relevant patient data found."
 
+    # Dynamic instructions based on intent
+    intent_instructions = ""
+    format_instructions = (
+        "Structure your response with clear sections if multiple pieces of info are asked, "
+        "but for simple questions, BE DIRECT and concise."
+    )
+
+    if intent == INTENT_MEDICATION:
+        intent_instructions = "Focus specifically on the patient's medications, dosages, and any mentions of drug effectiveness or side effects in the notes."
+    elif intent == INTENT_LAB:
+        intent_instructions = "Focus on the specific lab values, ranges, and any clinical flags related to these metrics."
+    elif intent == INTENT_PATIENT_LOOKUP:
+        intent_instructions = "Provide the basic identification details and current status of the patient."
+    elif intent == INTENT_SUMMARY:
+        intent_instructions = "Provide a comprehensive overview based on structured data and notes."
+        format_instructions = (
+            "Structure your response with these sections:\n"
+            "1. Patient Overview\n"
+            "2. Current Medications\n"
+            "3. Recent Lab Results\n"
+            "4. Clinical Notes Summary\n"
+            "5. Risk Indicators"
+        )
+    elif intent == INTENT_POPULATION:
+        intent_instructions = "Summarize the cohort found based on the criteria in the query."
+
     system_prompt = (
         "You are a clinical AI assistant for hospital staff. "
         "Answer queries about patient records using ONLY the provided context. "
         "Never fabricate patient data. If information is absent, say so explicitly. "
-        "Structure your response with clear sections:\n"
-        "1. Patient Overview\n"
-        "2. Current Medications\n"
-        "3. Recent Lab Results\n"
-        "4. Clinical Notes Summary\n"
-        "5. Risk Indicators\n"
-        "Be concise, factual, and clinically precise."
+        f"{intent_instructions}\n"
+        f"{format_instructions}\n"
+        "Be factual and clinically precise."
     )
 
     user_message = (
         f"Query: {query}\n\n"
         f"Context:\n{context_block}\n\n"
-        "Answer the query using only the above context "
-        "and use the structured sections format specified."
+        "Answer the query directly using only the above context. "
+        "If the answer is a simple fact (e.g. a medication name), give it directly without boilerplate."
     )
 
     return system_prompt, user_message
@@ -216,6 +240,7 @@ def process_query(query: str) -> dict:
         t4 = time.time()
         system_prompt, user_message = _build_prompt(
             query=query,
+            intent=intent,
             patients=patients,
             notes=notes,
             risk_flags=result["risk_flags"],
