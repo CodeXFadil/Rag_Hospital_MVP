@@ -136,6 +136,36 @@ def _build_prompt(
 
     context_block = "\n\n".join(sections) if sections else "No relevant patient data found."
 
+    # Logic to decide if Risk Indicators should be shown
+    risk_keywords = ["risk", "flag", "warning", "indicator", "concern", "problem", "danger", "alert"]
+    query_asks_for_risks = any(kw in query.lower() for kw in risk_keywords)
+    include_risks = (intent == INTENT_SUMMARY) or query_asks_for_risks
+
+    # If we shouldn't include risks, remove the risk context from the block passed to LLM
+    # However, if the query is a population query about a threshold, we might want to keep it
+    # But the user specifically complained about the long list of risks in the population query.
+    if not include_risks and risk_flags:
+        # Rebuild sections without risks
+        filtered_sections = []
+        if patients:
+            patient_ctx = []
+            for p in patients[:3]:
+                patient_ctx.append(
+                    f"Patient: {p['name']} ({p['patient_id']}) | Age: {p['age']} | Gender: {p['gender']}\n"
+                    f"Diagnoses: {p['diagnoses']}\n"
+                    f"Medications: {p['medications']}\n"
+                    f"Lab Results: {p['lab_results']}\n"
+                    f"Visit History: {p['visit_history']}"
+                )
+            filtered_sections.append("=== STRUCTURED PATIENT DATA ===\n" + "\n\n".join(patient_ctx))
+
+            notes_ctx = [
+                f"[{n['patient_id']} - {n['name']}] {n['text']}"
+                for n in notes[:4]
+            ]
+            filtered_sections.append("=== RETRIEVED CLINICAL NOTES ===\n" + "\n\n".join(notes_ctx))
+        context_block = "\n\n".join(filtered_sections) if filtered_sections else "No relevant patient data found."
+
     # Dynamic instructions based on intent
     intent_instructions = ""
     format_instructions = (
