@@ -1,15 +1,28 @@
 import { useState } from "react";
-import { Search, User, FlaskConical, Pill, AlertTriangle, ChevronRight } from "lucide-react";
-import { mockPatients, type Patient } from "@/data/mockPatients";
+import { Search, User, FlaskConical, Pill, AlertTriangle, ChevronRight, Loader2 } from "lucide-react";
+import { Patient } from "@/data/mockPatients";
 import { PatientSummary } from "@/components/PatientSummary";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-export function PatientSearchView() {
+interface PatientSearchViewProps {
+  patients: Patient[];
+  isLoading?: boolean;
+}
+
+export function PatientSearchView({ patients, isLoading }: PatientSearchViewProps) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Patient | null>(null);
 
-  const results = Object.values(mockPatients).filter((p) => {
+  if (isLoading) {
+    return (
+      <div className="flex h-full items-center justify-center p-12">
+        <Loader2 className="h-10 w-10 animate-spin text-primary opacity-50" />
+      </div>
+    );
+  }
+
+  const results = patients.filter((p) => {
     const q = query.toLowerCase();
     if (!q) return true;
     return (

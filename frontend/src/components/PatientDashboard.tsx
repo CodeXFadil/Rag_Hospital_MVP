@@ -1,13 +1,27 @@
-import { mockPatients } from "@/data/mockPatients";
+import { Patient } from "@/data/mockPatients";
 import { motion } from "framer-motion";
 import {
   Users, AlertTriangle, Activity, TrendingUp, FlaskConical,
   CheckCircle, ArrowUp, ArrowDown,
+  Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function PatientDashboard() {
-  const patients = Object.values(mockPatients);
+interface PatientDashboardProps {
+  patients: Patient[];
+  isLoading?: boolean;
+}
+
+export function PatientDashboard({ patients, isLoading }: PatientDashboardProps) {
+  if (isLoading) {
+    return (
+      <div className="flex h-full items-center justify-center p-12">
+        <Loader2 className="h-10 w-10 animate-spin text-primary opacity-50" />
+      </div>
+    );
+  }
+
+  const allPatients = patients;
   const totalPatients = patients.length;
   const criticalPatients = patients.filter((p) =>
     p.labResults.some((l) => l.status === "critical")

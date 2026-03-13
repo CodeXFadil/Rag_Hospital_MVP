@@ -209,3 +209,15 @@ ${
 }
 ${criticalLabs.length === 0 && warningLabs.length === 0 ? "All lab values within normal range. ✅" : ""}`;
 }
+export const API_BASE_URL = window.location.hostname === 'localhost' ? 'http://localhost:8000' : '';
+
+export async function fetchAllPatients(): Promise<Patient[]> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/patients`);
+    if (!response.ok) throw new Error('Failed to fetch patients');
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching patients:', error);
+    return Object.values(mockPatients); // Fallback to mocks
+  }
+}

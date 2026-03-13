@@ -154,6 +154,103 @@ async def chat_endpoint(request: QueryRequest):
         log(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/patients")
+def get_patients_endpoint():
+    """
+    Returns a list of all patients formatted for the React frontend.
+    This parses the semi-structured CSV data into clean JSON.
+    """
+    from agents.patient_data_agent import get_all_patients
+    from agents.clinical_reasoning_agent import RULES
+    import re
+    
+    df = get_all_patients()
+    patients_list = []
+    
+    for _, row in df.iterrows():
+        p_id = str(row["patient_id"])
+        
+        # 1. Parse Medications
+        med_list = []
+        raw_meds = str(row.get("medications", ""))
+        for m in raw_meds.split(","):
+            m = m.strip()
+            if m:
+                # Heuristic: split name and dosage
+                parts = m.split(" ")
+                name = parts[0]
+                dosage = " ".join(parts[1:]) if len(parts) > 1 else ""
+                med_list.append({
+                    "name": name,
+                    "dosage": dosage,
+                    "frequency": "As prescribed",
+                    "since": "2023"
+                })
+        
+        # 2. Parse Lab Results
+        lab_list = []
+        raw_labs = str(row.get("lab_results", ""))
+        # Split by comma (e.g., "HbA1c: 8.2%, BP: 145/90 mmHg")
+        for l_item in raw_labs.split(","):
+            l_item = l_item.strip()
+            if ":" in l_item:
+                name_val = l_item.split(":", 1)
+                name = name_val[0].strip()
+                val_unit = name_val[1].strip()
+                
+                # Split value and unit (e.g. "8.2%", "145/90 mmHg")
+                v_match = re.search(r"([0-9\./]+)\s*(.*)", val_unit)
+                value = v_match.group(1) if v_match else val_unit
+                unit = v_match.group(2) if v_match else ""
+                
+                # Status determination using clinical rules
+                status = "normal"
+                for rule in RULES:
+                    if rule["marker"] in name or name in rule["marker"]:
+                        try:
+                            # Rule pattern might be specific like BP systolic
+                            r_match = re.search(rule["pattern"], l_item, re.IGNORECASE)
+                            if r_match:
+                                r_val = float(r_match.group(1))
+                                triggered = (
+                                    (rule["condition"] == "above" and r_val > rule["threshold"]) or
+                                    (rule["condition"] == "below" and r_val < rule["threshold"])
+                                )
+                                if triggered:
+                                    status = "critical" if "🔴" in rule["flag"] else "warning"
+                        except:
+                            pass
+                
+                lab_list.append({
+                    "name": name,
+                    "value": value,
+                    "unit": unit,
+                    "normalRange": "See protocol",
+                    "status": status
+                })
+        
+        # 3. Parse Metadata (Ward, Doctor from visit history or general)
+        vh = str(row.get("visit_history", ""))
+        last_visit = vh.split(";")[-1].split(":")[0].strip() if vh else "2024"
+        ward = vh.split(":")[-1].strip() if ":" in vh else "General OPD"
+        
+        patients_list.append({
+            "id": p_id,
+            "name": row["name"],
+            "age": int(row["age"]),
+            "gender": row["gender"],
+            "bloodGroup": "Unknown", # Not in CSV
+            "diagnoses": [d.strip() for d in str(row["diagnoses"]).split(",")],
+            "medications": med_list,
+            "labResults": lab_list,
+            "lastVisit": last_visit,
+            "ward": ward,
+            "attendingDoctor": "Dr. Clinical AI",
+            "notes": row["doctor_notes"]
+        })
+        
+    return patients_list
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))

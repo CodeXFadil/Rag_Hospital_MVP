@@ -1,15 +1,32 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Menu, Activity } from "lucide-react";
 import { AppSidebar } from "@/components/AppSidebar";
 import { ChatInterface } from "@/components/ChatInterface";
 import { PatientSearchView } from "@/components/PatientSearchView";
 import { PatientDashboard } from "@/components/PatientDashboard";
 import { QueryHistoryView } from "@/components/QueryHistoryView";
+import { fetchAllPatients, Patient } from "@/data/mockPatients";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("chat");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [queryHistory, setQueryHistory] = useState<string[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadPatients = async () => {
+      try {
+        const data = await fetchAllPatients();
+        setPatients(data);
+      } catch (error) {
+        console.error("Failed to load patients", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadPatients();
+  }, []);
 
   const handleQueryAdded = (q: string) => {
     setQueryHistory((prev) => [q, ...prev]);
@@ -28,9 +45,9 @@ const Index = () => {
       case "chat":
         return <ChatInterface onQueryAdded={handleQueryAdded} />;
       case "search":
-        return <PatientSearchView />;
+        return <PatientSearchView patients={patients} isLoading={loading} />;
       case "dashboard":
-        return <PatientDashboard />;
+        return <PatientDashboard patients={patients} isLoading={loading} />;
       case "history":
         return (
           <QueryHistoryView
