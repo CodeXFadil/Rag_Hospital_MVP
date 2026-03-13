@@ -38,7 +38,7 @@ FALLBACK_INTENT = INTENT_SUMMARY   # safe default
 # ── LLM client (shared config with coordinator) ─────────────────────────────────
 OPENROUTER_API_KEY  = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_MODEL       = "meta-llama/llama-3-8b-instruct"
+DEFAULT_MODEL       = os.getenv("LLM_MODEL", "openai/gpt-4o-mini")
 
 SYSTEM_PROMPT = (
     "You are a query routing agent for a hospital patient records assistant. "

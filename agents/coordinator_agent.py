@@ -40,7 +40,7 @@ load_dotenv()
 
 OPENROUTER_API_KEY  = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_MODEL       = "meta-llama/llama-3-8b-instruct"
+DEFAULT_MODEL       = os.getenv("LLM_MODEL", "openai/gpt-4o-mini")
 
 
 def _get_llm_client() -> OpenAI:
