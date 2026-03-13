@@ -112,6 +112,14 @@ def _build_prompt(
     """Assemble the system + user messages for final LLM synthesis."""
     sections = []
 
+    # 0. Database Metadata (Always show count for context)
+    try:
+        total_count = len(get_all_patients())
+        sections.append(f"=== DATABASE METADATA ===\nTotal Patients in Database: {total_count}")
+    except:
+        pass
+
+    # 1. Structured Patient Data
     if patients:
         patient_ctx = []
         for p in patients[:3]:
@@ -124,14 +132,28 @@ def _build_prompt(
             )
         sections.append("=== STRUCTURED PATIENT DATA ===\n" + "\n\n".join(patient_ctx))
 
+    # 2. Retrieved Clinical Notes (Always show if available, regardless of patient lookup)
+    if notes:
         notes_ctx = [
             f"[{n['patient_id']} - {n['name']}] {n['text']}"
             for n in notes[:4]
         ]
         sections.append("=== RETRIEVED CLINICAL NOTES ===\n" + "\n\n".join(notes_ctx))
 
+    # 3. Clinical Risk Flags (Deduplicated)
     if risk_flags:
-        flags_ctx = [f"{f['flag']}: {f['detail']}" for f in risk_flags]
+        # Deduplicate based on flag name and patient (if exists)
+        unique_flags = []
+        seen = set()
+        for f in risk_flags:
+            # Check if this flag for this specific patient (or global if no patient) is already seen
+            p_id = f.get("patient_id", "")
+            key = (f["flag"], p_id)
+            if key not in seen:
+                unique_flags.append(f)
+                seen.add(key)
+        
+        flags_ctx = [f"{f['flag']}: {f['detail']}" for f in unique_flags]
         sections.append("=== CLINICAL RISK FLAGS ===\n" + "\n".join(flags_ctx))
 
     context_block = "\n\n".join(sections) if sections else "No relevant patient data found."
@@ -147,6 +169,13 @@ def _build_prompt(
     if not include_risks and risk_flags:
         # Rebuild sections without risks
         filtered_sections = []
+        # Total count still useful
+        try:
+            total_count = len(get_all_patients())
+            filtered_sections.append(f"=== DATABASE METADATA ===\nTotal Patients in Database: {total_count}")
+        except:
+            pass
+
         if patients:
             patient_ctx = []
             for p in patients[:3]:
@@ -159,11 +188,13 @@ def _build_prompt(
                 )
             filtered_sections.append("=== STRUCTURED PATIENT DATA ===\n" + "\n\n".join(patient_ctx))
 
+        if notes:
             notes_ctx = [
                 f"[{n['patient_id']} - {n['name']}] {n['text']}"
                 for n in notes[:4]
             ]
             filtered_sections.append("=== RETRIEVED CLINICAL NOTES ===\n" + "\n\n".join(notes_ctx))
+        
         context_block = "\n\n".join(filtered_sections) if filtered_sections else "No relevant patient data found."
 
     # Dynamic instructions based on intent
@@ -190,7 +221,11 @@ def _build_prompt(
             "5. Risk Indicators"
         )
     elif intent == INTENT_POPULATION:
-        intent_instructions = "Summarize the cohort found based on the criteria in the query."
+        intent_instructions = (
+            "Summarize the cohort found based on the criteria in the query. "
+            "If the user asks for a total count or how many patients are in the system, "
+            "provide the number from 'Total Patients in Database' in the context."
+        )
 
     system_prompt = (
         "You are a clinical AI assistant for hospital staff. "
@@ -258,12 +293,18 @@ def process_query(query: str) -> dict:
 
         # ── Step 3: Clinical Rules ─────────────────────────────────────
         t3 = time.time()
+        risk_flags = []
         if patients:
             if len(patients) == 1:
-                result["risk_flags"] = analyse_patient(patients[0])
+                risk_flags = analyse_patient(patients[0])
+                # Add patient_id to flags for deduplication logic
+                for f in risk_flags: f["patient_id"] = patients[0]["patient_id"]
             else:
                 for p in analyse_multiple_patients(patients):
-                    result["risk_flags"].extend(p.get("risk_flags", []))
+                    p_flags = p.get("risk_flags", [])
+                    for pf in p_flags: pf["patient_id"] = p["patient_id"]
+                    risk_flags.extend(p_flags)
+        result["risk_flags"] = risk_flags
         result["timings"]["clinical_rules"] = round(time.time() - t3, 3)
 
         # ── Step 4: LLM Synthesizer ────────────────────────────────────

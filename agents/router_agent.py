@@ -52,7 +52,7 @@ medication_query  - questions about medications, drugs, prescriptions, or dosage
 lab_query         - questions about lab results, test values, or specific biomarkers
 patient_summary   - requests for an overall health summary or overview of a patient
 clinical_notes    - requests about doctor notes, clinical observations, or medical history narratives
-population_query  - questions about multiple patients, cohorts, or threshold-based filtering (e.g. "which patients have HbA1c above 8")
+population_query  - questions about multiple patients, cohorts, threshold-based filtering, OR general questions about the entire database (e.g. "how many patients do you have?", "list all patients")
 
 Return ONLY the category name, nothing else.
 
