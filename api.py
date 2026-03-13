@@ -3,6 +3,14 @@ import sys
 import time
 import threading
 
+# PRE-EMPTIVE IMPORTS: Ensure these are in the namespace before secondary AI libraries load
+try:
+    import torch
+    import torch.nn as nn
+    print(f"[API] Torch {torch.__version__} initialized pre-emptively.", flush=True)
+except Exception as e:
+    print(f"[API] Pre-emptive torch import skipped: {e}", flush=True)
+
 # Apply SQLite patch BEFORE anything else
 try:
     from patch_sqlite import apply_patch

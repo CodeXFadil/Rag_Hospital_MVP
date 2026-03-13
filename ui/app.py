@@ -6,6 +6,15 @@ Run with: streamlit run ui/app.py
 
 import os
 import sys
+
+# PRE-EMPTIVE IMPORTS: Ensure these are in the namespace before secondary AI libraries load
+try:
+    import torch
+    import torch.nn as nn
+    # print(f"[UI] Torch {torch.__version__} initialized pre-emptively.")
+except Exception as e:
+    pass
+
 import streamlit as st
 
 # Ensure project root is on path
