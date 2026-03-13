@@ -12,8 +12,6 @@ venv/
 *.log
 
 # Heavy context items (Exclude from build)
-ui/
-frontend/
 sqlite3.dll
 sqlite3.def
 sqlite.zip
