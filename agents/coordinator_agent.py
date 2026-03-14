@@ -95,16 +95,22 @@ def _build_prompt(
     """Assemble the system + user messages for final LLM synthesis."""
     sections = []
 
-    # 0. Database Metadata (Always show count for context)
+    # 1. Database Metadata & Search Result Count
     try:
         total_count = len(get_all_patients())
-        sections.append(f"=== DATABASE METADATA ===\nTotal Patients in Database: {total_count}")
+        matched_count = len(patients)
+        sections.append(
+            f"=== DATABASE METADATA ===\n"
+            f"Total Patients in Database: {total_count}\n"
+            f"Patients matching current query: {matched_count}"
+        )
     except:
         pass
 
-    # 1. Structured Patient Data
+    # 2. Structured Patient Data (Subset)
     if patients:
         patient_ctx = []
+        # Show first 3 for detail, but LLM now knows the total count from Metadata above
         for p in patients[:3]:
             patient_ctx.append(
                 f"Patient: {p['name']} ({p['patient_id']}) | Age: {p['age']} | Gender: {p['gender']}\n"
@@ -113,9 +119,9 @@ def _build_prompt(
                 f"Lab Results: {p['lab_results']}\n"
                 f"Visit History: {p['visit_history']}"
             )
-        sections.append("=== STRUCTURED PATIENT DATA ===\n" + "\n\n".join(patient_ctx))
+        sections.append("=== STRUCTURED PATIENT DATA (First 3) ===\n" + "\n\n".join(patient_ctx))
 
-    # 2. Retrieved Clinical Notes (Always show if available, regardless of patient lookup)
+    # 3. Retrieved Clinical Notes
     if notes:
         notes_ctx = [
             f"[{n['patient_id']} - {n['name']}] {n['text']}"
@@ -123,13 +129,19 @@ def _build_prompt(
         ]
         sections.append("=== RETRIEVED CLINICAL NOTES ===\n" + "\n\n".join(notes_ctx))
 
-    # 3. Clinical Risk Flags (Deduplicated)
-    if risk_flags:
-        # Deduplicate based on flag name and patient (if exists)
+    # 4. Clinical Risk Flags (Deduplicated & Conditional)
+    # Logic to decide if Risk Indicators should be shown
+    risk_keywords = ["risk", "flag", "warning", "indicator", "concern", "problem", "danger", "alert", "analysis", "scrutini"]
+    query_asks_for_risks = any(kw in query.lower() for kw in risk_keywords)
+    
+    # NEW: Suppress individual risk flags for broad population queries UNLESS specifically asked
+    # This prevents the "wall of text" for simple count/list questions.
+    include_risks = (intent == INTENT_SUMMARY) or (query_asks_for_risks and intent != INTENT_POPULATION)
+    
+    if risk_flags and include_risks:
         unique_flags = []
         seen = set()
         for f in risk_flags:
-            # Check if this flag for this specific patient (or global if no patient) is already seen
             p_id = f.get("patient_id", "")
             key = (f["flag"], p_id)
             if key not in seen:
@@ -137,54 +149,15 @@ def _build_prompt(
                 seen.add(key)
         
         flags_ctx = [f"{f['flag']}: {f['detail']}" for f in unique_flags]
-        sections.append("=== CLINICAL RISK FLAGS ===\n" + "\n".join(flags_ctx))
+        sections.append("=== CLINICAL RISK FLAGS ===\n" + "\n".join(flags_ctx[:10])) # Cap at 10 for safety
 
     context_block = "\n\n".join(sections) if sections else "No relevant patient data found."
-
-    # Logic to decide if Risk Indicators should be shown
-    risk_keywords = ["risk", "flag", "warning", "indicator", "concern", "problem", "danger", "alert"]
-    query_asks_for_risks = any(kw in query.lower() for kw in risk_keywords)
-    include_risks = (intent == INTENT_SUMMARY) or query_asks_for_risks
-
-    # If we shouldn't include risks, remove the risk context from the block passed to LLM
-    # However, if the query is a population query about a threshold, we might want to keep it
-    # But the user specifically complained about the long list of risks in the population query.
-    if not include_risks and risk_flags:
-        # Rebuild sections without risks
-        filtered_sections = []
-        # Total count still useful
-        try:
-            total_count = len(get_all_patients())
-            filtered_sections.append(f"=== DATABASE METADATA ===\nTotal Patients in Database: {total_count}")
-        except:
-            pass
-
-        if patients:
-            patient_ctx = []
-            for p in patients[:3]:
-                patient_ctx.append(
-                    f"Patient: {p['name']} ({p['patient_id']}) | Age: {p['age']} | Gender: {p['gender']}\n"
-                    f"Diagnoses: {p['diagnoses']}\n"
-                    f"Medications: {p['medications']}\n"
-                    f"Lab Results: {p['lab_results']}\n"
-                    f"Visit History: {p['visit_history']}"
-                )
-            filtered_sections.append("=== STRUCTURED PATIENT DATA ===\n" + "\n\n".join(patient_ctx))
-
-        if notes:
-            notes_ctx = [
-                f"[{n['patient_id']} - {n['name']}] {n['text']}"
-                for n in notes[:4]
-            ]
-            filtered_sections.append("=== RETRIEVED CLINICAL NOTES ===\n" + "\n\n".join(notes_ctx))
-        
-        context_block = "\n\n".join(filtered_sections) if filtered_sections else "No relevant patient data found."
 
     # Dynamic instructions based on intent
     intent_instructions = ""
     format_instructions = (
         "Structure your response with clear sections if multiple pieces of info are asked, "
-        "but for simple questions, BE DIRECT and concise."
+        "but for simple questions (like counts or lists), BE DIRECT and concise."
     )
 
     if intent == INTENT_MEDICATION:
@@ -205,9 +178,8 @@ def _build_prompt(
         )
     elif intent == INTENT_POPULATION:
         intent_instructions = (
-            "Summarize the cohort found based on the criteria in the query. "
-            "If the user asks for a total count or how many patients are in the system, "
-            "provide the number from 'Total Patients in Database' in the context."
+            "Summarize the cohort found. "
+            "Use the 'Patients matching current query' number from the context to answer 'how many' questions. "
         )
 
     system_prompt = (
@@ -222,8 +194,7 @@ def _build_prompt(
     user_message = (
         f"Query: {query}\n\n"
         f"Context:\n{context_block}\n\n"
-        "Answer the query directly using only the above context. "
-        "If the answer is a simple fact (e.g. a medication name), give it directly without boilerplate."
+        "Answer the query directly using only the above context."
     )
 
     return system_prompt, user_message
