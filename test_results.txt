@@ -1,0 +1,56 @@
+
+--- Testing Query: Which patients have HbA1c above 8? ---
+Intent: population_query
+Response:
+Based on the provided context, the patient with HbA1c above 8 is:
+
+* Rahul Sharma (P001) with HbA1c: 8.2%
+
+Note: There is only one patient in the provided context, and his HbA1c level is above 8.
+Time Taken: 6.07s
+------------------------------
+
+--- Testing Query: Are there any risks for Rahul Sharma? ---
+Intent: patient_lookup
+Response:
+Risks for Rahul Sharma:
+
+**Uncontrolled Diabetes:** The patient's HbA1c level is 8.2%, indicating severely uncontrolled diabetes, which carries a significant risk of diabetic complications.
+
+**Hypertension Risk:** The patient's systolic BP is 145 mmHg, indicating a hypertension risk, and a hypertension management review is recommended.
+
+**Elevated LDL Cholesterol:** The patient's LDL level is 142 mg/dL, indicating an elevated cardiovascular risk, and review of statin therapy is recommended.
+
+No other risks are mentioned in the provided context.
+Time Taken: 4.44s
+------------------------------
+
+--- Testing Query: Give me a summary for Rahul Sharma. ---
+Intent: patient_summary
+Response:
+**Patient Overview**
+Rahul Sharma, a 52-year-old male, with diagnoses of Type 2 Diabetes and Hypertension.
+
+**Current Medications**
+Metformin 500mg, Amlodipine 5mg
+
+**Recent Lab Results**
+HbA1c: 8.2%, BP: 145/90 mmHg, LDL: 142 mg/dL
+
+**Clinical Notes Summary**
+Patient reports good compliance with Metformin.
+
+**Risk Indicators**
+⚠️ Uncontrolled Diabetes: HbA1c > 7% indicates suboptimal glycaemic control.
+🔴 Severely Uncontrolled Diabetes: HbA1c > 8% — significant risk of diabetic complications.
+⚠️ Hypertension Risk: Systolic BP > 140 mmHg — hypertension management review recommended.
+⚠️ Elevated LDL Cholesterol: LDL > 130 mg/dL — cardiovascular risk elevated. Review statin therapy.
+Time Taken: 4.28s
+------------------------------
+
+--- Testing Query: What medication is Rahul Sharma taking? ---
+Intent: medication_query
+Response:
+Rahul Sharma is taking Metformin 500mg and Amlodipine 5mg.
+Time Taken: 4.15s
+------------------------------

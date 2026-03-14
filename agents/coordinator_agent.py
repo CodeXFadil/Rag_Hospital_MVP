@@ -61,36 +61,19 @@ def _get_llm_client() -> OpenAI:
 
 # ── Routing helpers ─────────────────────────────────────────────────────────────
 
-def _resolve_patients(intent: str, pid: Optional[str], pname: Optional[str], query: str) -> list:
+from agents.patient_data_agent import filter_patients, get_all_patients
+
+def _resolve_patients(intent_data: Dict, query: str) -> list:
     """
-    Deterministically retrieve patient records based on intent.
-    LLM never touches the database — all retrieval is pandas/CSV.
+    Deterministically retrieve patient records based on structured LLM entities.
     """
-    # ── population_query: threshold-based multi-patient search ─────────────────
-    if intent == INTENT_POPULATION:
-        threshold_match = re.search(
-            r"(HbA1c|BP|LDL|eGFR|Hb|TSH|BNP|cholesterol)[^\d]*([0-9]+\.?[0-9]*)",
-            query, re.IGNORECASE,
-        )
-        direction = (
-            "below"
-            if any(w in query.lower() for w in ["below", "low", "less than"])
-            else "above"
-        )
-        if threshold_match:
-            marker    = threshold_match.group(1)
-            threshold = float(threshold_match.group(2))
-            return find_patients_by_lab_threshold(marker, direction, threshold)
+    entities = intent_data.get("entities", {})
+    
+    # 1. If we have entities, use the new complex filter
+    if entities:
+        return filter_patients(entities)
 
-        # No threshold found — fall back to individual lookup if we have an ID/name
-        if pid or pname:
-            return find_patient(patient_id=pid, name=pname)
-        return []
-
-    # ── All other intents: resolve by patient ID or name ───────────────────────
-    if pid or pname:
-        return find_patient(patient_id=pid, name=pname)
-
+    # 2. Fallback to basic lookup if entities are missing or empty
     return []
 
 
@@ -278,7 +261,7 @@ def process_query(query: str) -> dict:
 
         # ── Step 2a: Structured retrieval ──────────────────────────────
         t1 = time.time()
-        patients = _resolve_patients(intent, pid, pname, query)
+        patients = _resolve_patients(intent_data, query)
         result["timings"]["structured_retrieval"] = round(time.time() - t1, 3)
         result["patients"] = patients
 

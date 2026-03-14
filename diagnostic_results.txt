@@ -1,0 +1,41 @@
+Testing Query: Summarize patient P014.
+==============================
+PIPELINE STATUS: SUCCESS
+
+--- LLM RESPONSE ---
+**Patient Overview**
+
+* Patient: Fatima Khan (P014)
+* Age: 61
+* Gender: Female
+
+**Current Medications**
+
+* Sitagliptin 100mg
+* Losartan 50mg
+* Amlodipine 5mg
+
+**Recent Lab Results**
+
+* HbA1c: 7.8%
+* eGFR: 65 mL/min
+* BP: 140/88 mmHg
+* LDL: 122 mg/dL
+
+**Clinical Notes Summary**
+
+* Patient with multiple comorbidities requiring close monitoring
+* Diabetic nephropathy suspected
+* eGFR slightly reduced
+* BP on target but HbA1c above goal
+* Importance of medication adherence discussed
+* Annual retinal screening arranged
+
+**Risk Indicators**
+
+⚠️ Uncontrolled Diabetes: HbA1c > 7% indicates suboptimal glycaemic control.
+
+--- INTERNAL DATA ---
+Intent: patient_summary
+Patients: 1
+Notes: 1

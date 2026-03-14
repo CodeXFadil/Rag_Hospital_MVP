@@ -1,7 +1,7 @@
 import requests
 import json
 
-base_url = "https://web-production-defd0.up.railway.app"
+base_url = "https://web-production-57503.up.railway.app"
 
 def test_endpoint(path, method="GET", data=None):
     url = f"{base_url}{path}"

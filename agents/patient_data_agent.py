@@ -99,6 +99,94 @@ def find_patients_by_lab_threshold(lab_marker: str, condition: str, threshold: f
     return results
 
 
+def filter_patients(entities: Dict) -> List[Dict]:
+    """
+    Apply multiple structured filters to the patient database.
+    """
+    df = _load_data()
+    result_df = df.copy()
+
+    # 1. Patient ID / Name (Deterministic)
+    pid = entities.get("patient_id")
+    if pid and pid.upper() not in ["PXXX", "P000", "NONE"]:
+        result_df = result_df[result_df["patient_id_upper"] == pid.upper().strip()]
+    
+    pname = entities.get("patient_name")
+    if pname and pname.lower().strip() not in ["full name", "name", "none"]:
+        name_lower = pname.lower().strip()
+        result_df = result_df[result_df["name_lower"].str.contains(name_lower, na=False)]
+
+    # 2. Gender
+    if entities.get("gender"):
+        gender = entities["gender"].lower().strip()
+        result_df = result_df[result_df["gender"].str.lower() == gender]
+
+    # 3. Age Range
+    age_range = entities.get("age_range")
+    if age_range:
+        if age_range.get("min") is not None:
+            result_df = result_df[result_df["age"] >= age_range["min"]]
+        if age_range.get("max") is not None:
+            result_df = result_df[result_df["age"] <= age_range["max"]]
+
+    # 4. Medications (String search)
+    meds = entities.get("medications", [])
+    if meds:
+        for med in meds:
+            result_df = result_df[result_df["medications"].str.contains(med, case=False, na=False)]
+
+    records = []
+    import re
+    
+    # 5. Lab Filters (Regex applied row-by-row on the filtered subset)
+    lab_filters = entities.get("lab_filters", [])
+    
+    for _, row in result_df.iterrows():
+        keep = True
+        for f in lab_filters:
+            marker = f.get("marker")
+            op = f.get("operator")
+            target = f.get("value")
+            
+            if not marker or target is None: continue
+            
+            pattern = re.compile(rf"{re.escape(marker)}[:\s]*([0-9]+\.?[0-9]*)", re.IGNORECASE)
+            lab_str = str(row.get("lab_results", ""))
+            match = pattern.search(lab_str)
+            
+            if not match:
+                keep = False # Missing marker fails the filter
+                break
+            
+            try:
+                val = float(match.group(1))
+                if op == ">" and not (val > target): keep = False
+                elif op == ">=" and not (val >= target): keep = False
+                elif op == "<" and not (val < target): keep = False
+                elif op == "<=" and not (val <= target): keep = False
+                elif (op == "==" or op == "=") and not (val == target): keep = False
+                elif op == "!=" and not (val != target): keep = False
+            except:
+                keep = False
+            
+            if not keep: break
+            
+        if keep:
+            records.append({
+                "patient_id": row["patient_id"],
+                "name": row["name"],
+                "age": row["age"],
+                "gender": row["gender"],
+                "diagnoses": row["diagnoses"],
+                "medications": row["medications"],
+                "lab_results": row["lab_results"],
+                "doctor_notes": row["doctor_notes"],
+                "visit_history": row["visit_history"],
+            })
+            
+    return records
+
+
 def get_all_patients() -> Any:
     """Return the full patient dataframe."""
     return _load_data()

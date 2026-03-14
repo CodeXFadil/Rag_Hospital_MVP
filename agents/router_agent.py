@@ -1,19 +1,17 @@
 """
 agents/router_agent.py
-LLM-based intent classifier using OpenRouter.
-The LLM classifies intent; entity extraction (patient ID/name) stays deterministic.
+LLM-based structured query parser using OpenRouter.
 """
 
 import os
 import re
 import sys
+import json
 from typing import Optional, Dict
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
 from dotenv import load_dotenv
 from openai import OpenAI
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 load_dotenv()
 
 # ── Intent category constants ───────────────────────────────────────────────────
@@ -23,127 +21,90 @@ INTENT_LAB              = "lab_query"
 INTENT_SUMMARY          = "patient_summary"
 INTENT_NOTES            = "clinical_notes"
 INTENT_POPULATION       = "population_query"
+FALLBACK_INTENT         = INTENT_SUMMARY
 
 VALID_INTENTS = {
-    INTENT_PATIENT_LOOKUP,
-    INTENT_MEDICATION,
-    INTENT_LAB,
-    INTENT_SUMMARY,
-    INTENT_NOTES,
-    INTENT_POPULATION,
+    INTENT_PATIENT_LOOKUP, INTENT_MEDICATION, INTENT_LAB,
+    INTENT_SUMMARY, INTENT_NOTES, INTENT_POPULATION
 }
 
-FALLBACK_INTENT = INTENT_SUMMARY   # safe default
-
-# ── LLM client (shared config with coordinator) ─────────────────────────────────
 OPENROUTER_API_KEY  = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL       = os.getenv("LLM_MODEL", "openai/gpt-4o-mini")
 
 SYSTEM_PROMPT = (
-    "You are a query routing agent for a hospital patient records assistant. "
-    "Your ONLY job is to classify the user's query into exactly one category."
+    "You are a clinical query parser. Extract criteria into structured JSON. "
+    "Always return valid JSON. Standardize markers to: HbA1c, BP, LDL, eGFR, Glucose."
 )
 
-CLASSIFICATION_PROMPT = """Classify the user query into exactly one of these categories:
-
-patient_lookup    - finding or identifying a specific patient
-medication_query  - questions about medications, drugs, prescriptions, or dosages
-lab_query         - questions about lab results, test values, or specific biomarkers
-patient_summary   - requests for an overall health summary or overview of a patient
-clinical_notes    - requests about doctor notes, clinical observations, or medical history narratives
-population_query  - questions about multiple patients, cohorts, threshold-based filtering, OR general questions about the entire database (e.g. "how many patients do you have?", "list all patients")
-
-Return ONLY the category name, nothing else.
-
-Query: {query}
-Category:"""
-
+SCHEMA_PROMPT = """Extract into JSON:
+{{
+  "primary_intent": "one of: [patient_lookup, medication_query, lab_query, patient_summary, clinical_notes, population_query]",
+  "entities": {{
+    "patient_id": "PXXX",
+    "patient_name": "Name",
+    "lab_filters": [{{"marker": "name", "operator": ">|<|==", "value": 0.0}}],
+    "medications": [],
+    "age_range": {{"min": 0, "max": 120}},
+    "gender": "male|female"
+  }}
+}}
+Query: {query}"""
 
 def _get_llm_client() -> OpenAI:
-    if not OPENROUTER_API_KEY:
-        raise ValueError(
-            "OPENROUTER_API_KEY not set. Please add it to your .env file."
-        )
     return OpenAI(api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL)
 
-
-def _classify_with_llm(query: str) -> str:
-    """Call LLM to classify intent. Returns a validated intent string."""
-    client = _get_llm_client()
-    response = client.chat.completions.create(
-        model=DEFAULT_MODEL,
-        temperature=0,
-        max_tokens=10,          # only need one short token
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user",   "content": CLASSIFICATION_PROMPT.format(query=query)},
-        ],
-    )
-    raw = response.choices[0].message.content.strip().lower()
-
-    # Normalise: strip punctuation and extra whitespace
-    cleaned = re.sub(r"[^a-z_]", "", raw)
-
-    if cleaned in VALID_INTENTS:
-        return cleaned
-
-    # Partial match fallback (e.g. LLM says "summary" instead of "patient_summary")
-    for intent in VALID_INTENTS:
-        if cleaned in intent or intent in cleaned:
-            return intent
-
-    return FALLBACK_INTENT
-
-
-# ── Deterministic entity extraction (no LLM) ───────────────────────────────────
-
-def _extract_patient_id(query: str) -> Optional[str]:
-    """Extract a patient ID like P014 from the query string."""
-    match = re.search(r"\bp(\d{3})\b", query, re.IGNORECASE)
-    return match.group(0).upper() if match else None
-
-
-def _extract_patient_name(query: str) -> Optional[str]:
-    """
-    Heuristic name extraction: look for Title-Case word pairs after
-    common trigger words, or just two consecutive capitalised words.
-    """
-    # After trigger words
-    m = re.search(
-        r"(?:patient|about|for|of|is|summarize|summary of)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})",
-        query,
-    )
-    if m:
-        return m.group(1)
-
-    # Fallback: two consecutive Title-Case words anywhere
-    m = re.search(r"\b([A-Z][a-z]+\s+[A-Z][a-z]+)\b", query)
-    if m:
-        return m.group(1)
-
-    return None
-
-
-# ── Public API ──────────────────────────────────────────────────────────────────
-
 def classify_intent(query: str) -> Dict:
-    """
-    Classify the user query and extract relevant entities.
+    client = _get_llm_client()
+    try:
+        response = client.chat.completions.create(
+            model=DEFAULT_MODEL,
+            temperature=0,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user",   "content": SCHEMA_PROMPT.format(query=query)},
+            ],
+            response_format={"type": "json_object"}
+        )
+        data = json.loads(response.choices[0].message.content)
+        
+        # 1. CLEAN KEYS RECURSIVELY
+        def clean_obj(obj):
+            if isinstance(obj, dict):
+                return {k.strip().replace('"', '').replace("'", ""): clean_obj(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [clean_obj(i) for i in obj]
+            return obj
 
-    Returns:
-        {
-          "primary_intent":         str   — one of VALID_INTENTS
-          "intents":                list  — [primary_intent]  (kept for coordinator compat)
-          "extracted_patient_id":   Optional[str]
-          "extracted_patient_name": Optional[str]
+        data = clean_obj(data)
+        
+        # 2. EXTRACT INTENT
+        raw_intent = data.get("primary_intent", FALLBACK_INTENT)
+        # Validate intent
+        final_intent = FALLBACK_INTENT
+        for v in VALID_INTENTS:
+            if v in str(raw_intent).lower():
+                final_intent = v
+                break
+        
+        # 3. GET ENTITIES
+        entities = data.get("entities", {})
+        if not isinstance(entities, dict): entities = {}
+        
+        return {
+            "primary_intent": final_intent,
+            "intents": [final_intent],
+            "entities": entities,
+            "extracted_patient_id": entities.get("patient_id"),
+            "extracted_patient_name": entities.get("patient_name")
         }
-    """
-    intent = _classify_with_llm(query)
 
-    return {
-        "primary_intent":         intent,
-        "intents":                [intent],          # coordinator reads intent["intents"]
-        "extracted_patient_id":   _extract_patient_id(query),
-        "extracted_patient_name": _extract_patient_name(query),
-    }
+    except Exception as e:
+        print(f"ROUTER FALLBACK: {e}")
+        return {
+            "primary_intent": FALLBACK_INTENT,
+            "intents": [FALLBACK_INTENT],
+            "entities": {},
+            "extracted_patient_id": None,
+            "extracted_patient_name": None
+        }
