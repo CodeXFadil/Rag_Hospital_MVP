@@ -268,7 +268,12 @@ def process_query(query: str) -> dict:
         # ── Step 2b: Semantic retrieval ────────────────────────────────
         t2 = time.time()
         notes = []
-        if _should_call_notes_agent(intent) or not patients:
+        # Fallback to global notes only if NOT a population-level query
+        # This prevents "noise" in population queries while allowing specific 
+        # patient semantic lookups to work even if the ID is slightly off.
+        allow_global_fallback = (intent != INTENT_POPULATION)
+        
+        if _should_call_notes_agent(intent) or (not patients and allow_global_fallback):
             note_pid = patients[0]["patient_id"] if len(patients) == 1 else None
             notes = get_relevant_notes(query=query, patient_id=note_pid, top_k=4)
         result["timings"]["vector_search"] = round(time.time() - t2, 3)
@@ -305,7 +310,7 @@ def process_query(query: str) -> dict:
             model=DEFAULT_MODEL,
             temperature=0,
             messages=[
-                {"role": "system", "content": system_prompt},
+                 {"role": "system", "content": system_prompt},
                 {"role": "user",   "content": user_message},
             ],
         )
