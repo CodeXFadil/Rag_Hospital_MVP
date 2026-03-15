@@ -164,10 +164,10 @@ def get_patients_endpoint():
     from agents.clinical_reasoning_agent import RULES
     import re
     
-    df = get_all_patients()
+    patients_from_db = get_all_patients()
     patients_list = []
     
-    for _, row in df.iterrows():
+    for row in patients_from_db:
         p_id = str(row["patient_id"])
         
         # 1. Parse Medications
