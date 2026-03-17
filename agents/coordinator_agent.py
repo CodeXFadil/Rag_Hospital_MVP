@@ -32,7 +32,7 @@ from agents.router_agent import (
     INTENT_NOTES,
     INTENT_POPULATION,
 )
-from agents.patient_data_agent import find_patient, find_patients_by_lab_threshold, get_all_patients
+from agents.patient_data_agent import find_patient, get_all_patients
 from agents.notes_agent import get_relevant_notes
 from agents.clinical_reasoning_agent import analyse_patient, analyse_multiple_patients
 
