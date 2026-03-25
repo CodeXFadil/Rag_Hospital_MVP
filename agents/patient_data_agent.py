@@ -59,15 +59,20 @@ def filter_patients(entities: Dict, session: Session = None) -> List[Dict]:
             query = query.filter(Patient.name.ilike(f"%{pname.strip()}%"))
 
         # 2. Demographic Filters
-        if entities.get("gender"):
-            query = query.filter(Patient.gender.ilike(entities["gender"].strip()))
+        # Sanitize gender: only apply if it's a single valid value (not 'male|female' etc.)
+        raw_gender = (entities.get("gender") or "").strip().lower()
+        if raw_gender in {"male", "female"}:
+            query = query.filter(Patient.gender.ilike(raw_gender))
 
         age_range = entities.get("age_range")
-        if age_range:
-            if age_range.get("min") is not None:
-                query = query.filter(Patient.age >= age_range["min"])
-            if age_range.get("max") is not None:
-                query = query.filter(Patient.age <= age_range["max"])
+        if age_range and isinstance(age_range, dict):
+            # Ignore the router's default placeholder of {min:0, max:120} — not a real filter
+            age_min = age_range.get("min")
+            age_max = age_range.get("max")
+            if age_min is not None and int(age_min) > 0:
+                query = query.filter(Patient.age >= int(age_min))
+            if age_max is not None and int(age_max) < 120:
+                query = query.filter(Patient.age <= int(age_max))
 
         # 3. Medication Filters (Optimized with JOIN)
         meds = entities.get("medications", [])

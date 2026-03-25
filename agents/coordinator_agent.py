@@ -67,13 +67,27 @@ def _resolve_patients(intent_data: Dict, query: str) -> list:
     """
     Deterministically retrieve patient records based on structured LLM entities.
     """
+    intent   = intent_data.get("primary_intent", "")
     entities = intent_data.get("entities", {})
-    
-    # 1. If we have entities, use the new complex filter
+
+    # For population-level queries with no specific patient identifier,
+    # always return ALL patients so the LLM can count/group them correctly.
+    has_patient_id   = bool(entities.get("patient_id"))
+    has_patient_name = bool(entities.get("patient_name"))
+    has_lab_filter   = bool(entities.get("lab_filters"))
+    has_meds_filter  = bool(entities.get("medications"))
+    has_gender_filter = (entities.get("gender") or "").strip().lower() in {"male", "female"}
+
+    is_population = (intent == INTENT_POPULATION)
+    has_narrow_filter = has_patient_id or has_patient_name or has_lab_filter or has_meds_filter
+
+    if is_population and not has_narrow_filter:
+        # No specific filter — return all patients for counting / grouping
+        return get_all_patients()
+
     if entities:
         return filter_patients(entities)
 
-    # 2. Fallback to basic lookup if entities are missing or empty
     return []
 
 
@@ -97,21 +111,29 @@ def _build_prompt(
 
     # 1. Database Metadata & Search Result Count
     try:
-        total_count = len(get_all_patients())
+        all_patients  = get_all_patients()
+        total_count   = len(all_patients)
         matched_count = len(patients)
+
+        # Gender breakdown (always useful for population queries)
+        male_count   = sum(1 for p in all_patients if (p.get("gender") or "").lower() == "male")
+        female_count = sum(1 for p in all_patients if (p.get("gender") or "").lower() == "female")
+
         sections.append(
             f"=== DATABASE METADATA ===\n"
             f"Total Patients in Database: {total_count}\n"
+            f"  - Male: {male_count}  |  Female: {female_count}\n"
             f"Patients matching current query: {matched_count}"
         )
     except:
         pass
 
-    # 2. Structured Patient Data (Subset)
+    # 2. Structured Patient Data
     if patients:
+        # Show up to 10 for detail — prevents the '3 listed but 4 matched' confusion
+        detail_cap  = min(10, len(patients))
         patient_ctx = []
-        # Show first 3 for detail, but LLM now knows the total count from Metadata above
-        for p in patients[:3]:
+        for p in patients[:detail_cap]:
             patient_ctx.append(
                 f"Patient: {p['name']} ({p['patient_id']}) | Age: {p['age']} | Gender: {p['gender']}\n"
                 f"Diagnoses: {p['diagnoses']}\n"
@@ -119,7 +141,8 @@ def _build_prompt(
                 f"Lab Results: {p['lab_results']}\n"
                 f"Visit History: {p['visit_history']}"
             )
-        sections.append("=== STRUCTURED PATIENT DATA (First 3) ===\n" + "\n\n".join(patient_ctx))
+        label = f"=== STRUCTURED PATIENT DATA (Showing {detail_cap} of {len(patients)}) ==="
+        sections.append(label + "\n" + "\n\n".join(patient_ctx))
 
     # 3. Retrieved Clinical Notes
     if notes:
