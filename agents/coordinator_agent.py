@@ -77,9 +77,14 @@ def _resolve_patients(intent_data: Dict, query: str) -> list:
     has_lab_filter   = bool(entities.get("lab_filters"))
     has_meds_filter  = bool(entities.get("medications"))
     has_gender_filter = (entities.get("gender") or "").strip().lower() in {"male", "female"}
+    age_range = entities.get("age_range", {}) or {}
+    has_age_filter = (age_range.get("min") is not None) or (age_range.get("max") is not None)
 
     is_population = (intent == INTENT_POPULATION)
-    has_narrow_filter = has_patient_id or has_patient_name or has_lab_filter or has_meds_filter
+    has_narrow_filter = (
+        has_patient_id or has_patient_name or has_lab_filter or 
+        has_meds_filter or has_gender_filter or has_age_filter
+    )
 
     if is_population and not has_narrow_filter:
         # No specific filter — return all patients for counting / grouping
