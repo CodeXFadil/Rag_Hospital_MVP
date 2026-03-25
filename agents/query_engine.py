@@ -57,7 +57,7 @@ INTENT_SCHEMA = {
         "gender":       None,
         "age_range":    {"min": None, "max": None},
         "medications":  [],
-        "diagnosis":    [],
+        "diagnoses":    [],
         "lab_filters":  [
             {"marker": None, "operator": "> | < | >= | <= | = | !=", "value": None}
         ],
@@ -137,7 +137,7 @@ def _validate_intent(data: Dict) -> Dict:
     filters.setdefault("gender",       None)
     filters.setdefault("age_range",    {})
     filters.setdefault("medications",  [])
-    filters.setdefault("diagnosis",    [])
+    filters.setdefault("diagnoses",    [])
     filters.setdefault("lab_filters",  [])
 
     agg = data.get("aggregation", {})
@@ -161,7 +161,7 @@ def _empty_intent() -> Dict:
         "intent":      "filter",
         "filters":     {
             "patient_id": None, "patient_name": None, "gender": None,
-            "age_range": {}, "medications": [], "diagnosis": [], "lab_filters": [],
+            "age_range": {}, "medications": [], "diagnoses": [], "lab_filters": [],
         },
         "aggregation": {},
         "extreme":     {},
@@ -216,8 +216,8 @@ def _build_filtered_query(base_query, filters: Dict, joined: set):
         for med in meds:
             base_query = base_query.filter(Medication.med_name.ilike(f"%{med}%"))
 
-    # 6. Diagnosis — join once only
-    diagnoses = [d for d in (filters.get("diagnosis") or []) if d]
+    # 6. Diagnoses — join once only
+    diagnoses = [d for d in (filters.get("diagnoses") or []) if d]
     if diagnoses:
         if "diagnoses" not in joined:
             base_query = base_query.join(Diagnosis, Patient.patient_id == Diagnosis.patient_id)
@@ -452,6 +452,7 @@ def _filters_to_entities(filters: Dict) -> Dict:
         "gender":       filters.get("gender"),
         "age_range":    filters.get("age_range") or {},
         "medications":  filters.get("medications") or [],
+        "diagnoses":    filters.get("diagnoses") or [],
         "lab_filters":  [
             {
                 "marker":   lf.get("marker"),
@@ -481,7 +482,7 @@ def _summarise_filters(filters: Dict) -> Dict:
     if ar.get("min") is not None or ar.get("max") is not None:
         summary["age_range"] = ar
     if filters.get("medications"):  summary["medications"]  = filters["medications"]
-    if filters.get("diagnosis"):    summary["diagnosis"]    = filters["diagnosis"]
+    if filters.get("diagnoses"):    summary["diagnoses"]    = filters["diagnoses"]
     if filters.get("lab_filters"):  summary["lab_filters"]  = filters["lab_filters"]
     return summary
 

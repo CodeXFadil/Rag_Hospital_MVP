@@ -81,6 +81,13 @@ def filter_patients(entities: Dict, session: Session = None) -> List[Dict]:
                 query = query.join(Medication, Patient.patient_id == Medication.patient_id)\
                              .filter(Medication.med_name.ilike(f"%{med}%"))
 
+        # 3b. Diagnosis Filters (Optimized with JOIN)
+        diagnoses = entities.get("diagnoses", [])
+        if diagnoses:
+            for diag in diagnoses:
+                query = query.join(Diagnosis, Patient.patient_id == Diagnosis.patient_id)\
+                             .filter(Diagnosis.diagnosis_name.ilike(f"%{diag}%"))
+
         # 4. Lab Filters (Optimized with JOIN)
         lab_filters = entities.get("lab_filters", [])
         for f in lab_filters:
