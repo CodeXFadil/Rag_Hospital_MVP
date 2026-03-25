@@ -140,6 +140,29 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
           });
         }
 
+        // ── Debug panel: show parsed intent for debugging ──────────────
+        const intentDebug = data.intent || {};
+        const entities    = intentDebug.entities || {};
+        const timings     = data.timings  || {};
+
+        const debugLines = [
+          `**🔍 Debug — Parsed Intent**`,
+          `\`\`\``,
+          `Intent       : ${intentDebug.primary_intent || "unknown"}`,
+          `Patient ID   : ${entities.patient_id   ?? "null"}`,
+          `Patient Name : ${entities.patient_name ?? "null"}`,
+          `Gender       : ${entities.gender       ?? "null"}`,
+          `Age Range    : min=${entities.age_range?.min ?? "null"}, max=${entities.age_range?.max ?? "null"}`,
+          `Lab Filters  : ${JSON.stringify(entities.lab_filters ?? [])}`,
+          `Medications  : ${JSON.stringify(entities.medications ?? [])}`,
+          `Patients matched : ${data.patients?.length ?? 0}`,
+          `Timings (s)  : router=${timings.router_llm ?? "-"} | db=${timings.structured_retrieval ?? "-"} | vec=${timings.vector_search ?? "-"} | llm=${timings.synthesis_llm ?? "-"} | total=${timings.total ?? "-"}`,
+          `\`\`\``,
+        ].join("\n");
+
+        text += "\n\n---\n" + debugLines;
+        // ───────────────────────────────────────────────────────────────
+
         const aiMsg: Message = {
           id: (Date.now() + 1).toString(),
           role: "assistant",
