@@ -101,10 +101,17 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
         
         let text = data.llm_response || "No response generated.";
         
-        // Append risk flags if any
-        if (data.risk_flags && data.risk_flags.length > 0) {
+        // Append risk flags — only for summary intent or explicit risk queries
+        const summaryIntents = ["patient_summary", "clinical_notes"];
+        const riskKeywords = ["risk", "flag", "warning", "indicator", "concern", "danger", "alert", "analysis", "problem", "critical"];
+        const intentVal: string = data.intent?.primary_intent || "";
+        const queryAsksForRisks = riskKeywords.some((kw) => query.toLowerCase().includes(kw));
+        const shouldShowRisks = summaryIntents.includes(intentVal) || queryAsksForRisks;
+
+        if (shouldShowRisks && data.risk_flags && data.risk_flags.length > 0) {
           text += "\n\n### 🚨 Risk Indicators\n" + data.risk_flags.map((f: any) => `- **${f.flag}**: ${f.detail}`).join("\n");
         }
+
         
         // Append notes if any
         if (data.notes && data.notes.length > 0) {

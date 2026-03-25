@@ -252,19 +252,30 @@ def process_query(query: str) -> dict:
 
         # ── Step 3: Clinical Rules ─────────────────────────────────────
         t3 = time.time()
+        risk_keywords = {"risk", "flag", "warning", "indicator", "concern",
+                         "danger", "alert", "analysis", "problem", "critical"}
+        query_asks_for_risks = any(kw in query.lower() for kw in risk_keywords)
+        # Only run clinical rules for summary or explicit risk queries on a single patient
+        should_run_rules = (intent == INTENT_SUMMARY) or (
+            query_asks_for_risks and intent not in {INTENT_POPULATION}
+        )
+
         risk_flags = []
-        if patients:
+        if patients and should_run_rules:
             if len(patients) == 1:
                 risk_flags = analyse_patient(patients[0])
-                # Add patient_id to flags for deduplication logic
-                for f in risk_flags: f["patient_id"] = patients[0]["patient_id"]
+                for f in risk_flags:
+                    f["patient_id"] = patients[0]["patient_id"]
             else:
                 for p in analyse_multiple_patients(patients):
                     p_flags = p.get("risk_flags", [])
-                    for pf in p_flags: pf["patient_id"] = p["patient_id"]
+                    for pf in p_flags:
+                        pf["patient_id"] = p["patient_id"]
                     risk_flags.extend(p_flags)
+
         result["risk_flags"] = risk_flags
         result["timings"]["clinical_rules"] = round(time.time() - t3, 3)
+
 
         # ── Step 4: LLM Synthesizer ────────────────────────────────────
         t4 = time.time()
