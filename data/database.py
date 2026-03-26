@@ -29,6 +29,9 @@ class Patient(Base):
     name         = Column(String, index=True)
     age          = Column(Integer, index=True)
     gender       = Column(String, index=True)
+    admission_date = Column(String, index=True)
+    discharge_date = Column(String)
+    outcome      = Column(String, index=True)
     doctor_notes = Column(Text)
     visit_history = Column(Text)
 

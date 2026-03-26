@@ -58,6 +58,8 @@ INTENT_SCHEMA = {
         "age_range":    {"min": None, "max": None},
         "medications":  [],
         "diagnoses":    [],
+        "outcome":      None,
+        "admission_year": None,
         "lab_filters":  [
             {"marker": None, "operator": "> | < | >= | <= | = | !=", "value": None}
         ],
@@ -138,6 +140,8 @@ def _validate_intent(data: Dict) -> Dict:
     filters.setdefault("age_range",    {})
     filters.setdefault("medications",  [])
     filters.setdefault("diagnoses",    [])
+    filters.setdefault("outcome",      None)
+    filters.setdefault("admission_year", None)
     filters.setdefault("lab_filters",  [])
 
     agg = data.get("aggregation", {})
@@ -162,6 +166,7 @@ def _empty_intent() -> Dict:
         "filters":     {
             "patient_id": None, "patient_name": None, "gender": None,
             "age_range": {}, "medications": [], "diagnoses": [], "lab_filters": [],
+            "outcome": None, "admission_year": None,
         },
         "aggregation": {},
         "extreme":     {},
@@ -206,6 +211,13 @@ def _build_filtered_query(base_query, filters: Dict, joined: set):
             base_query = base_query.filter(Patient.age >= int(age_range["min"]))
         if age_range.get("max") is not None:
             base_query = base_query.filter(Patient.age <= int(age_range["max"]))
+
+    # 4b. Outcome and Admission Year
+    if filters.get("outcome"):
+        base_query = base_query.filter(Patient.outcome.ilike(filters["outcome"].strip()))
+    if filters.get("admission_year"):
+        year_str = str(filters["admission_year"]).strip()
+        base_query = base_query.filter(Patient.admission_date.like(f"{year_str}-%"))
 
     # 5. Medications — join once only
     meds = [m for m in (filters.get("medications") or []) if m]
@@ -319,6 +331,10 @@ def aggregate_patients(intent: Dict, session: Session = None) -> Dict:
                 group_col = Patient.gender
             elif gb == "age":
                 group_col = Patient.age
+            elif gb == "outcome":
+                group_col = Patient.outcome
+            elif gb in ["year", "admission_year"]:
+                group_col = func.substr(Patient.admission_date, 1, 4)
 
         # Construct query
         select_cols = [agg_col]
@@ -453,6 +469,8 @@ def _filters_to_entities(filters: Dict) -> Dict:
         "age_range":    filters.get("age_range") or {},
         "medications":  filters.get("medications") or [],
         "diagnoses":    filters.get("diagnoses") or [],
+        "outcome":      filters.get("outcome"),
+        "admission_year": filters.get("admission_year"),
         "lab_filters":  [
             {
                 "marker":   lf.get("marker"),
@@ -483,6 +501,8 @@ def _summarise_filters(filters: Dict) -> Dict:
         summary["age_range"] = ar
     if filters.get("medications"):  summary["medications"]  = filters["medications"]
     if filters.get("diagnoses"):    summary["diagnoses"]    = filters["diagnoses"]
+    if filters.get("outcome"):      summary["outcome"]      = filters["outcome"]
+    if filters.get("admission_year"): summary["admission_year"] = filters["admission_year"]
     if filters.get("lab_filters"):  summary["lab_filters"]  = filters["lab_filters"]
     return summary
 

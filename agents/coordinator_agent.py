@@ -80,11 +80,14 @@ def _resolve_patients(intent_data: Dict, query: str) -> list:
     age_range = entities.get("age_range", {}) or {}
     has_age_filter = (age_range.get("min") is not None) or (age_range.get("max") is not None)
     has_diagnosis_filter = bool(entities.get("diagnoses"))
+    has_outcome_filter   = bool(entities.get("outcome"))
+    has_year_filter      = bool(entities.get("admission_year"))
 
     is_population = (intent == INTENT_POPULATION)
     has_narrow_filter = (
         has_patient_id or has_patient_name or has_lab_filter or 
-        has_meds_filter or has_gender_filter or has_age_filter or has_diagnosis_filter
+        has_meds_filter or has_gender_filter or has_age_filter or 
+        has_diagnosis_filter or has_outcome_filter or has_year_filter
     )
 
     if is_population and not has_narrow_filter:

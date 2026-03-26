@@ -45,7 +45,9 @@ SYSTEM_PROMPT = (
     "5. 'patient_name': only set when a specific person's name is mentioned. Otherwise null.\n"
     "6. 'lab_filters': only populate when query mentions a specific lab marker + threshold. Otherwise empty [].\n"
     "7. 'medications': only populate when a specific drug name is mentioned. Otherwise empty [].\n"
-    "8. 'diagnoses': only populate when a specific disease or condition (like diabetes, hypertension, asthma) is mentioned. Otherwise empty []."
+    "8. 'diagnoses': only populate when a specific disease or condition (like diabetes, hypertension, asthma) is mentioned. Otherwise empty [].\n"
+    "9. 'outcome': only populate if the query asks for deaths, survival, deceased, or discharged patients (e.g. exactly 'Deceased' or 'Discharged'). Otherwise null.\n"
+    "10. 'admission_year': only populate if a specific year (e.g. 2021) is mentioned. Otherwise null."
 )
 
 SCHEMA_PROMPT = """Return JSON with null for any field not present in the query:
@@ -58,7 +60,9 @@ SCHEMA_PROMPT = """Return JSON with null for any field not present in the query:
     "lab_filters": [{{"marker": null, "operator": "> | < | >= | <= | == | !=", "value": null}}],
     "medications": [],
     "age_range": {{"min": null, "max": null}},
-    "gender": null
+    "gender": null,
+    "outcome": null,
+    "admission_year": null
   }}
 }}
 Query: {query}"""
