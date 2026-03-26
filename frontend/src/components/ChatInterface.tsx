@@ -14,16 +14,14 @@ const welcomeMessages: Message[] = [
   {
     id: "welcome",
     role: "assistant",
-    content: `## Welcome to Hospital Patient Records Assistant 👋
+    content: `## Welcome to Hospital Patient Analytics Assistant 👋
 
-I'm your AI-powered clinical assistant. I can help you with:
+I'm your AI-powered clinical assistant. I can help you with population analytics and database filtering:
 
-- **Patient summaries** — Ask "Summarize patient P001" or search by name
-- **Medication queries** — E.g., "What medications is Rahul Sharma taking?"
-- **Lab results** — E.g., "Which patients have HbA1c above 8?"
-- **Clinical overviews** — Get structured patient data at a glance
-
-*Available patients: Rahul Sharma (P001), Anita Desai (P014), Mohammed Al-Hassan (P022)*
+- **Demographics** — E.g., "What is the average age of diabetic patients?"
+- **Lab thresholds** — E.g., "How many female patients have HbA1c above 8?"
+- **Aggregations** — E.g., "Count patients grouped by gender"
+- **Extremes** — E.g., "Which 5 patients have the highest LDL?"
 
 How can I assist you today?`,
     timestamp: new Date(),

@@ -8,10 +8,10 @@ interface ChatInputProps {
 }
 
 const suggestions = [
-  "What medication is Rahul Sharma taking?",
-  "Summarize patient P014",
+  "How many diabetic patients are there?",
+  "What is the average age of female patients?",
   "Which patients have HbA1c above 8?",
-  "Show me patient P022's lab results",
+  "Count patients grouped by gender",
 ];
 
 export function ChatInput({ onSubmit, isLoading }: ChatInputProps) {
