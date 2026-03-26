@@ -138,7 +138,9 @@ def _build_prompt(
         pass
 
     # 2. Structured Patient Data
-    if patients:
+    if isinstance(patients, dict) and patients.get("intent") == "aggregation":
+        sections.append(f"=== POPULATION ANALYTICS ===\nAggregation Result: {patients.get('result', '')}")
+    elif isinstance(patients, list) and patients:
         # Show up to 10 for detail — prevents the '3 listed but 4 matched' confusion
         detail_cap  = min(10, len(patients))
         patient_ctx = []
@@ -293,7 +295,7 @@ def process_query(query: str) -> dict:
         )
 
         risk_flags = []
-        if patients and should_run_rules:
+        if isinstance(patients, list) and patients and should_run_rules:
             if len(patients) == 1:
                 risk_flags = analyse_patient(patients[0])
                 for f in risk_flags:
