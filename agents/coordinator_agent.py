@@ -131,51 +131,70 @@ def _build_prompt(
 
     # 1. Database Metadata & Search Result Count
     try:
+        # Optimization: Do NOT load 5,000 patients just for metadata counts
         all_patients  = get_all_patients()
         total_count   = len(all_patients)
         
+        # Cap population scan at 1,000 for gender counts to save memory/tokens
+        meta_sample = all_patients[:1000]
+        male_count   = sum(1 for p in meta_sample if (p.get("gender") or "").lower() == "male")
+        female_count = sum(1 for p in meta_sample if (p.get("gender") or "").lower() == "female")
+        
+        # Scaling estimates if we sampled
+        if total_count > 1000:
+            male_count   = int(male_count * (total_count / 1000))
+            female_count = int(female_count * (total_count / 1000))
+
         if isinstance(patients, list):
             matched_count = len(patients)
         elif isinstance(patients, dict) and "result" in patients:
             res = patients["result"]
-            matched_count = sum(item["value"] for item in res) if isinstance(res, list) else res
+            # Multi-metric handling: Extract first count found
+            if isinstance(res, dict):
+                matched_count = next((v for k, v in res.items() if "count" in k), 0)
+            elif isinstance(res, list):
+                matched_count = sum(item["metrics"].get("count_patients", 0) for item in res if "metrics" in item)
+            else:
+                matched_count = res
         else:
             matched_count = 0
-
-
-        # Gender breakdown (always useful for population queries)
-        male_count   = sum(1 for p in all_patients if (p.get("gender") or "").lower() == "male")
-        female_count = sum(1 for p in all_patients if (p.get("gender") or "").lower() == "female")
 
         sections.append(
             f"=== DATABASE METADATA ===\n"
             f"Total Patients in Database: {total_count}\n"
-            f"  - Male: {male_count}  |  Female: {female_count}\n"
-            f"Patients matching current query: {matched_count}"
+            f"  - Gender Distribution (Estimated): Male: {male_count} | Female: {female_count}\n"
+            f"Note: Your query currently matches {matched_count} patients."
         )
     except:
         pass
 
-    # 2. Structured Patient Data
+    # 2. Structured Patient Data / Analytics
     if isinstance(patients, dict) and patients.get("intent") == "aggregation":
         res_val = patients.get("result", "")
         if isinstance(res_val, list):
-            res_val = "\n".join([f"- {item['group']}: {item['value']}" for item in res_val])
+            # Format grouped results: Group: Metric1=Val, Metric2=Val
+            lines = []
+            for item in res_val:
+                m_str = ", ".join([f"{k}={v}" for k, v in item.get('metrics', {}).items()])
+                lines.append(f"- {item['group']}: {m_str}")
+            res_val = "\n".join(lines)
+        elif isinstance(res_val, dict):
+            # Format single summary: Metric1=Val, Metric2=Val
+            res_val = ", ".join([f"{k}={v}" for k, v in res_val.items()])
+        
         sections.append(f"=== POPULATION ANALYTICS ===\n{res_val}")
     elif isinstance(patients, list) and patients:
-        # Show up to 10 for detail — prevents the '3 listed but 4 matched' confusion
-        detail_cap  = min(10, len(patients))
+        # STRICT CAP: Never pass more than 100 patients to LLM context
+        context_cap = min(100, len(patients))
         patient_ctx = []
-        for p in patients[:detail_cap]:
+        for p in patients[:context_cap]:
             patient_ctx.append(
-                f"Patient: {p['name']} ({p['patient_id']}) | Age: {p['age']} | Gender: {p['gender']}\n"
-                f"Diagnoses: {p['diagnoses']}\n"
-                f"Medications: {p['medications']}\n"
-                f"Lab Results: {p['lab_results']}\n"
-                f"Visit History: {p['visit_history']}"
+                f"ID: {p['patient_id']} | {p['name']} | Age: {p['age']} | Gender: {p['gender']}\n"
+                f"Diagnosis: {p.get('primary_diagnosis', p.get('diagnoses', 'Unknown'))}"
             )
-        label = f"=== STRUCTURED PATIENT DATA (Showing {detail_cap} of {len(patients)}) ==="
-        sections.append(label + "\n" + "\n\n".join(patient_ctx))
+        label = f"=== SAMPLE PATIENT DATA (Showing {context_cap} of {len(patients)}) ==="
+        sections.append(label + "\n" + "\n".join(patient_ctx))
+
 
     # 3. Retrieved Clinical Notes
     if notes:
