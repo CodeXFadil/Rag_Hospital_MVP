@@ -26,18 +26,37 @@ Base = declarative_base()
 class Patient(Base):
     __tablename__ = "patients"
     patient_id   = Column(String, primary_key=True, index=True)
+    episode_id   = Column(String, index=True)
     name         = Column(String, index=True)
     age          = Column(Integer, index=True)
     gender       = Column(String, index=True)
+    nationality  = Column(String, index=True)
     admission_date = Column(String, index=True)
     discharge_date = Column(String)
-    outcome      = Column(String, index=True)
-    doctor_notes = Column(Text)
+    length_of_stay = Column(Integer)
+    primary_diagnosis = Column(String, index=True)
+    mi_type      = Column(String, index=True)
+    
+    # Risk Factors & Physicals
+    risk_smoking      = Column(String)
+    risk_hypertension = Column(String)
+    risk_diabetes     = Column(String)
+    bmi_category      = Column(String, index=True)
+    
+    # Clinical Status
+    icu_admission = Column(String, index=True)
+    procedure     = Column(String, index=True)
+    complications = Column(String, index=True)
+    outcome       = Column(String, index=True)
+    death_flag    = Column(Integer, index=True)  # 0 or 1
+    
+    doctor_notes  = Column(Text)
     visit_history = Column(Text)
 
     medications = relationship("Medication", back_populates="patient", cascade="all, delete-orphan")
     diagnoses   = relationship("Diagnosis",  back_populates="patient", cascade="all, delete-orphan")
     lab_results = relationship("LabResult",  back_populates="patient", cascade="all, delete-orphan")
+
 
 
 class Medication(Base):

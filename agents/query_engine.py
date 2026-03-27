@@ -60,10 +60,15 @@ INTENT_SCHEMA = {
         "diagnoses":    [],
         "outcome":      None,
         "admission_year": None,
+        "nationality":  None,
+        "bmi_category": None,
+        "procedure":    None,
+        "mi_type":      None,
         "lab_filters":  [
             {"marker": None, "operator": "> | < | >= | <= | = | !=", "value": None}
         ],
     },
+
     "aggregation": {
         "type":     "count | avg | sum | min | max",
         "field":    "age | lab_value",
@@ -142,7 +147,12 @@ def _validate_intent(data: Dict) -> Dict:
     filters.setdefault("diagnoses",    [])
     filters.setdefault("outcome",      None)
     filters.setdefault("admission_year", None)
+    filters.setdefault("nationality",  None)
+    filters.setdefault("bmi_category", None)
+    filters.setdefault("procedure",    None)
+    filters.setdefault("mi_type",      None)
     filters.setdefault("lab_filters",  [])
+
 
     agg = data.get("aggregation", {})
     if not isinstance(agg, dict):
@@ -164,10 +174,11 @@ def _empty_intent() -> Dict:
     return {
         "intent":      "filter",
         "filters":     {
-            "patient_id": None, "patient_name": None, "gender": None,
-            "age_range": {}, "medications": [], "diagnoses": [], "lab_filters": [],
+            "patient_range": {}, "medications": [], "diagnoses": [], "lab_filters": [],
             "outcome": None, "admission_year": None,
+            "nationality": None, "bmi_category": None, "procedure": None, "mi_type": None,
         },
+
         "aggregation": {},
         "extreme":     {},
     }
@@ -218,6 +229,17 @@ def _build_filtered_query(base_query, filters: Dict, joined: set):
     if filters.get("admission_year"):
         year_str = str(filters["admission_year"]).strip()
         base_query = base_query.filter(Patient.admission_date.like(f"{year_str}-%"))
+    
+    # 4c. New Excel Fields
+    if filters.get("nationality"):
+        base_query = base_query.filter(Patient.nationality.ilike(filters["nationality"].strip()))
+    if filters.get("bmi_category"):
+        base_query = base_query.filter(Patient.bmi_category.ilike(filters["bmi_category"].strip()))
+    if filters.get("procedure"):
+        base_query = base_query.filter(Patient.procedure.ilike(filters["procedure"].strip()))
+    if filters.get("mi_type"):
+        base_query = base_query.filter(Patient.mi_type.ilike(filters["mi_type"].strip()))
+
 
     # 5. Medications — join once only
     meds = [m for m in (filters.get("medications") or []) if m]
@@ -335,6 +357,17 @@ def aggregate_patients(intent: Dict, session: Session = None) -> Dict:
                 group_col = Patient.outcome
             elif gb in ["year", "admission_year"]:
                 group_col = func.substr(Patient.admission_date, 1, 4)
+            elif gb == "nationality":
+                group_col = Patient.nationality
+            elif gb == "bmi_category":
+                group_col = Patient.bmi_category
+            elif gb == "procedure":
+                group_col = Patient.procedure
+            elif gb == "mi_type":
+                group_col = Patient.mi_type
+            elif gb == "complications":
+                group_col = Patient.complications
+
 
         # Construct query
         select_cols = [agg_col]
@@ -471,7 +504,12 @@ def _filters_to_entities(filters: Dict) -> Dict:
         "diagnoses":    filters.get("diagnoses") or [],
         "outcome":      filters.get("outcome"),
         "admission_year": filters.get("admission_year"),
+        "nationality":  filters.get("nationality"),
+        "bmi_category": filters.get("bmi_category"),
+        "procedure":    filters.get("procedure"),
+        "mi_type":      filters.get("mi_type"),
         "lab_filters":  [
+
             {
                 "marker":   lf.get("marker"),
                 "operator": lf.get("operator"),
@@ -503,7 +541,12 @@ def _summarise_filters(filters: Dict) -> Dict:
     if filters.get("diagnoses"):    summary["diagnoses"]    = filters["diagnoses"]
     if filters.get("outcome"):      summary["outcome"]      = filters["outcome"]
     if filters.get("admission_year"): summary["admission_year"] = filters["admission_year"]
+    if filters.get("nationality"):  summary["nationality"]  = filters["nationality"]
+    if filters.get("bmi_category"): summary["bmi_category"] = filters["bmi_category"]
+    if filters.get("procedure"):    summary["procedure"]    = filters["procedure"]
+    if filters.get("mi_type"):      summary["mi_type"]      = filters["mi_type"]
     if filters.get("lab_filters"):  summary["lab_filters"]  = filters["lab_filters"]
+
     return summary
 
 

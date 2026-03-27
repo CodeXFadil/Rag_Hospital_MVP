@@ -108,8 +108,22 @@ def filter_patients(entities: Dict, session: Session = None) -> List[Dict]:
                 if op == "!=":           query = query.filter(LabResult.value != target)
                 else:                    query = query.filter(LabResult.value == target)
 
+        # 5. Excel-Specific Filters
+        def _apply_text_filter(col, key):
+            nonlocal query
+            val = entities.get(key)
+            if val and val.lower().strip() not in ["none", "all", "unknown"]:
+                query = query.filter(col.ilike(f"%{val.strip()}%"))
+
+        _apply_text_filter(Patient.nationality, "nationality")
+        _apply_text_filter(Patient.bmi_category, "bmi_category")
+        _apply_text_filter(Patient.procedure,    "procedure")
+        _apply_text_filter(Patient.complications,"complications")
+        _apply_text_filter(Patient.mi_type,      "mi_type")
+
         results = query.all()
         return [serialize_patient(p) for p in results]
+
     finally:
         if not session: db.close()
 
@@ -199,14 +213,30 @@ def get_all_patients(session: Session = None) -> List[Dict]:
 # ── Serialization ────────────────────────────────────────────────────────────────
 
 def serialize_patient(p: Patient) -> Dict:
-    """Convert an ORM Patient object to a plain dictionary.
-    IMPORTANT: Assumes relationships are already eager-loaded to avoid N+1 queries.
-    """
+    """Convert an ORM Patient object to a plain dictionary."""
     return {
         "patient_id":   p.patient_id,
+        "episode_id":   p.episode_id,
         "name":         p.name,
         "age":          p.age,
         "gender":       p.gender,
+        "nationality":  p.nationality,
+        "admission_date": p.admission_date,
+        "discharge_date": p.discharge_date,
+        "length_of_stay": p.length_of_stay,
+        "primary_diagnosis": p.primary_diagnosis,
+        "mi_type":      p.mi_type,
+        "risk_factors": {
+            "smoking": p.risk_smoking,
+            "hypertension": p.risk_hypertension,
+            "diabetes": p.risk_diabetes,
+            "bmi": p.bmi_category
+        },
+        "icu_admission": p.icu_admission,
+        "procedure":     p.procedure,
+        "complications": p.complications,
+        "outcome":       p.outcome,
+        "death_flag":    p.death_flag,
         "diagnoses":    ", ".join([d.diagnosis_name for d in p.diagnoses]),
         "medications":  ", ".join([m.med_name for m in p.medications]),
         "lab_results":  ", ".join([
@@ -216,3 +246,4 @@ def serialize_patient(p: Patient) -> Dict:
         "doctor_notes": p.doctor_notes,
         "visit_history": p.visit_history,
     }
+
