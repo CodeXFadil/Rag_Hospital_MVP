@@ -21,11 +21,12 @@ INTENT_LAB              = "lab_query"
 INTENT_SUMMARY          = "patient_summary"
 INTENT_NOTES            = "clinical_notes"
 INTENT_POPULATION       = "population_query"
+INTENT_ANALYTICS        = "analytics_query"
 FALLBACK_INTENT         = INTENT_SUMMARY
 
 VALID_INTENTS = {
     INTENT_PATIENT_LOOKUP, INTENT_MEDICATION, INTENT_LAB,
-    INTENT_SUMMARY, INTENT_NOTES, INTENT_POPULATION
+    INTENT_SUMMARY, INTENT_NOTES, INTENT_POPULATION, INTENT_ANALYTICS
 }
 
 OPENROUTER_API_KEY  = os.getenv("OPENROUTER_API_KEY", "")
@@ -47,12 +48,17 @@ SYSTEM_PROMPT = (
     "7. 'medications': only populate when a specific drug name is mentioned. Otherwise empty [].\n"
     "8. 'diagnoses': only populate when a specific disease or condition (like diabetes, hypertension, asthma) is mentioned. Otherwise empty [].\n"
     "9. 'outcome': only populate if the query asks for deaths, survival, deceased, or discharged patients (e.g. exactly 'Deceased' or 'Discharged'). Otherwise null.\n"
-    "10. 'admission_year': only populate if a specific year (e.g. 2021) is mentioned. Otherwise null."
+    "10. 'admission_year': only populate if a specific year (e.g. 2021) is mentioned. Otherwise null.\n"
+    "11. 'primary_intent' rules:\n"
+    "    - Use 'analytics_query' if the user asks for a 'distribution', 'trends', 'by year', 'by outcome', 'average age', 'count by', or 'group by'.\n"
+    "    - CRITICAL: If the user asks to 'group patients by year', this is ALWAYS an 'analytics_query', NOT a 'population_query'.\n"
+    "    - Use 'population_query' only for simple lists or finding many patients without statistical grouping.\n"
+    "    - Use 'patient_summary' for one person."
 )
 
 SCHEMA_PROMPT = """Return JSON with null for any field not present in the query:
 {{
-  "primary_intent": "one of: [patient_lookup, medication_query, lab_query, patient_summary, clinical_notes, population_query]",
+  "primary_intent": "one of: [patient_lookup, medication_query, lab_query, patient_summary, clinical_notes, population_query, analytics_query]",
   "entities": {{
     "patient_id": null,
     "patient_name": null,

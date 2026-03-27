@@ -31,7 +31,9 @@ from agents.router_agent import (
     INTENT_SUMMARY,
     INTENT_NOTES,
     INTENT_POPULATION,
+    INTENT_ANALYTICS,
 )
+from agents.query_engine import parse_query_to_intent, route_intent
 from agents.patient_data_agent import find_patient, get_all_patients
 from agents.notes_agent import get_relevant_notes
 from agents.clinical_reasoning_agent import analyse_patient, analyse_multiple_patients
@@ -90,6 +92,15 @@ def _resolve_patients(intent_data: Dict, query: str) -> list:
         has_diagnosis_filter or has_outcome_filter or has_year_filter
     )
 
+    if intent == INTENT_ANALYTICS:
+        # 1. Parse natural language into a structured Query Engine intent
+        analytical_intent = parse_query_to_intent(query)
+        # 2. Add extra filters from the router to ensure parity
+        analytical_intent["filters"].update(entities)
+        # 3. Route to the structured query engine
+        res = route_intent(analytical_intent)
+        return {"intent": "aggregation", "result": res.get("result")}
+
     if is_population and not has_narrow_filter:
         # No specific filter — return all patients for counting / grouping
         return get_all_patients()
@@ -139,7 +150,10 @@ def _build_prompt(
 
     # 2. Structured Patient Data
     if isinstance(patients, dict) and patients.get("intent") == "aggregation":
-        sections.append(f"=== POPULATION ANALYTICS ===\nAggregation Result: {patients.get('result', '')}")
+        res_val = patients.get("result", "")
+        if isinstance(res_val, list):
+            res_val = "\n".join([f"- {item['group']}: {item['value']}" for item in res_val])
+        sections.append(f"=== POPULATION ANALYTICS ===\n{res_val}")
     elif isinstance(patients, list) and patients:
         # Show up to 10 for detail — prevents the '3 listed but 4 matched' confusion
         detail_cap  = min(10, len(patients))
@@ -214,6 +228,12 @@ def _build_prompt(
         intent_instructions = (
             "Summarize the cohort found. "
             "Use the 'Patients matching current query' number from the context to answer 'how many' questions. "
+        )
+    elif intent == INTENT_ANALYTICS:
+        intent_instructions = (
+            "Explain the statistical findings clearly. "
+            "If a distribution is provided, present it as a clean list or summary. "
+            "Refer to the 'POPULATION ANALYTICS' section for the exact data."
         )
 
     system_prompt = (
