@@ -133,7 +133,15 @@ def _build_prompt(
     try:
         all_patients  = get_all_patients()
         total_count   = len(all_patients)
-        matched_count = len(patients)
+        
+        if isinstance(patients, list):
+            matched_count = len(patients)
+        elif isinstance(patients, dict) and "result" in patients:
+            res = patients["result"]
+            matched_count = sum(item["value"] for item in res) if isinstance(res, list) else res
+        else:
+            matched_count = 0
+
 
         # Gender breakdown (always useful for population queries)
         male_count   = sum(1 for p in all_patients if (p.get("gender") or "").lower() == "male")

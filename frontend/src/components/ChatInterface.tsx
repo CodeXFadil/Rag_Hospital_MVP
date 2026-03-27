@@ -150,10 +150,19 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
           `Patient ID   : ${entities.patient_id   ?? "null"}`,
           `Patient Name : ${entities.patient_name ?? "null"}`,
           `Gender       : ${entities.gender       ?? "null"}`,
-          `Age Range    : min=${entities.age_range?.min ?? "null"}, max=${entities.age_range?.max ?? "null"}`,
+          `Age Range      : min=${entities.age_range?.min ?? "null"}, max=${entities.age_range?.max ?? "null"}`,
+          `Admission Year : ${entities.admission_year ?? "null"}`,
           `Lab Filters  : ${JSON.stringify(entities.lab_filters ?? [])}`,
           `Medications  : ${JSON.stringify(entities.medications ?? [])}`,
-          `Patients matched : ${data.patients?.length ?? 0}`,
+          `Patients matched : ${
+            Array.isArray(data.patients) 
+              ? data.patients.length 
+              : (data.patients?.result 
+                  ? (Array.isArray(data.patients.result) 
+                      ? data.patients.result.reduce((a: number, b: any) => a + (b.value || 0), 0) 
+                      : data.patients.result) 
+                  : 0)
+          }`,
           `Timings (s)  : router=${timings.router_llm ?? "-"} | db=${timings.structured_retrieval ?? "-"} | vec=${timings.vector_search ?? "-"} | llm=${timings.synthesis_llm ?? "-"} | total=${timings.total ?? "-"}`,
           `\`\`\``,
         ].join("\n");
