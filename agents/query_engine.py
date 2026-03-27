@@ -47,10 +47,19 @@ def _get_llm_client() -> OpenAI:
     return OpenAI(api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL)
 
 
-# ── Intent Schema ───────────────────────────────────────────────────────────────
+DERIVED_RULES = {
+    "heart failure": {"primary_diagnosis": "Heart Failure"},
+    "angina":        {"primary_diagnosis": "Angina"},
+    "high hba1c":    {"lab_filters": [{"marker": "HbA1c", "operator": ">", "value": 6.5}]},
+    "stemi":         {"mi_type": "STEMI"},
+    "nstemi":        {"mi_type": "NSTEMI"},
+    "obese":         {"bmi_category": "Obese"},
+    "elderly":       {"age_range": {"min": 65, "max": 120}},
+}
+
 
 INTENT_SCHEMA = {
-    "intent": "filter | aggregation | extreme | lookup",
+    "intents": ["filter", "aggregation", "extreme", "lookup"], # List of active intents
     "filters": {
         "patient_id":   None,
         "patient_name": None,
@@ -68,12 +77,13 @@ INTENT_SCHEMA = {
             {"marker": None, "operator": "> | < | >= | <= | = | !=", "value": None}
         ],
     },
-
-    "aggregation": {
-        "type":     "count | avg | sum | min | max",
-        "field":    "age | lab_value",
-        "group_by": None,
-    },
+    "aggregations": [
+        {
+            "type":     "count | avg | sum | min | max",
+            "field":    "age | lab_value",
+            "group_by": "gender | age | outcome | year | nationality | bmi_category | procedure | mi_type | medication | diagnosis",
+        }
+    ],
     "extreme": {
         "type":  "top | bottom",
         "field": "lab_value",
@@ -83,30 +93,22 @@ INTENT_SCHEMA = {
 }
 
 _SYSTEM_PROMPT = (
-    "You are a medical data query parser.\n"
-    "Convert the user query into structured JSON matching the schema exactly.\n"
-    "Rules:\n"
-    "- Identify intent: filter, aggregation, extreme, or lookup\n"
-    "- Extract filters (age, gender, medications, diagnosis, lab markers)\n"
-    "- Extract aggregation if present (count, average, sum, min, max)\n"
-    "- Extract extreme queries (top N, highest, lowest) — always include 'marker'\n"
+    "- Identify ALL intents: filter, aggregation, extreme, or lookup\n"
+    "- For analytical questions (e.g., 'How many X...'), include BOTH 'filter' and 'aggregation' intents.\n"
+    "- Extract filters (age, gender, medications, diagnosis, lab markers) into the 'filters' object.\n"
+    "- Support multiple aggregations in the 'aggregations' list. EACH aggregation must use the shared 'filters'.\n"
     "- Standardise lab marker names to: HbA1c, BP, LDL, eGFR, Glucose, Cholesterol\n"
     "- Only return valid JSON. No explanations.\n"
     f"Schema:\n{json.dumps(INTENT_SCHEMA, indent=2)}"
 )
 
 
-# ── Step 1: LLM Intent Parser ───────────────────────────────────────────────────
 
 def parse_query_to_intent(query: str) -> Dict:
-    """
-    Use the LLM to convert a natural language query into a structured intent dict.
-
-    Returns a validated dict matching INTENT_SCHEMA.
-    On any failure, returns a safe fallback with intent='filter' and empty filters.
-    """
+    """End-to-end intent processing: Parse -> Normalize -> Validate."""
     client = _get_llm_client()
     try:
+
         response = client.chat.completions.create(
             model=DEFAULT_MODEL,
             temperature=0,
@@ -117,74 +119,119 @@ def parse_query_to_intent(query: str) -> Dict:
             response_format={"type": "json_object"},
         )
         raw = response.choices[0].message.content
-
-        # Strip markdown code fences if the model wraps its response
         raw = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.MULTILINE)
         raw = re.sub(r"```\s*$", "", raw.strip(), flags=re.MULTILINE)
 
         data = json.loads(raw)
-        return _validate_intent(data)
+        
+        # New Pipeline: Normalize then Validate
+        normalized = normalize_intent(data, query)
+        return _validate_intent(normalized)
 
     except Exception as e:
         print(f"[query_engine] parse_query_to_intent failed: {e}")
         return _empty_intent()
 
 
-def _validate_intent(data: Dict) -> Dict:
-    """Ensure all required keys are present with sane defaults."""
-    intent = data.get("intent", "filter")
-    if intent not in {"filter", "aggregation", "extreme", "lookup"}:
-        intent = "filter"
+def normalize_intent(intent: Dict, query: str) -> Dict:
+    """
+    Apply clinical rules, fill defaults, and clean up ambiguous LLM output.
+    """
+    q_lower = query.lower()
+    filters = intent.setdefault("filters", {})
+    
+    # 1. Apply Derived Rules
+    for term, rules in DERIVED_RULES.items():
+        if term in q_lower:
+            # Merge rules into filters
+            if "primary_diagnosis" in rules:
+                filters["primary_diagnosis"] = rules["primary_diagnosis"]
+                # If we found a primary diagnosis, the LLM-extracted list is likely redundant/wrong
+                filters["diagnoses"] = [] 
+            if "mi_type" in rules:
+                filters["mi_type"] = rules["mi_type"]
+            if "diagnoses" in rules:
+                existing = filters.setdefault("diagnoses", [])
+                for d in rules["diagnoses"]:
+                    if d not in existing: existing.append(d)
+            if "lab_filters" in rules:
+                existing = filters.setdefault("lab_filters", [])
+                existing.extend(rules["lab_filters"])
+            if "age_range" in rules:
+                filters["age_range"] = rules["age_range"]
+            if "bmi_category" in rules:
+                filters["bmi_category"] = rules["bmi_category"]
 
-    filters = data.get("filters", {})
-    if not isinstance(filters, dict):
-        filters = {}
+
+    # 2. Normalize Lab Operators
+    lab_filters = filters.setdefault("lab_filters", [])
+    for lf in lab_filters:
+        if not lf.get("operator"):
+            lf["operator"] = ">" if "high" in q_lower else "<" if "low" in q_lower else "="
+
+    # 3. Ensure intents is a list
+    if "intent" in intent and "intents" not in intent:
+        intent["intents"] = [intent["intent"]]
+    
+    if not intent.get("intents"):
+        intent["intents"] = ["filter"]
+
+    return intent
+
+
+def _validate_intent(data: Dict) -> Dict:
+    """Verify structure without silent destructive overrides."""
+    if not isinstance(data.get("intents"), list):
+        return {"error": "Invalid intent format", "raw": data}
+
+    filters = data.setdefault("filters", {})
     filters.setdefault("patient_id",   None)
     filters.setdefault("patient_name", None)
-    filters.setdefault("gender",       None)
-    filters.setdefault("age_range",    {})
     filters.setdefault("medications",  [])
     filters.setdefault("diagnoses",    [])
-    filters.setdefault("outcome",      None)
-    filters.setdefault("admission_year", None)
-    filters.setdefault("nationality",  None)
-    filters.setdefault("bmi_category", None)
-    filters.setdefault("procedure",    None)
-    filters.setdefault("mi_type",      None)
     filters.setdefault("lab_filters",  [])
 
+    aggs = data.setdefault("aggregations", [])
+    if not isinstance(aggs, list):
+        data["aggregations"] = []
 
-    agg = data.get("aggregation", {})
-    if not isinstance(agg, dict):
-        agg = {}
-
-    extreme = data.get("extreme", {})
-    if not isinstance(extreme, dict):
-        extreme = {}
-
-    return {
-        "intent":      intent,
-        "filters":     filters,
-        "aggregation": agg,
-        "extreme":     extreme,
-    }
+    return data
 
 
 def _empty_intent() -> Dict:
     return {
-        "intent":      "filter",
-        "filters":     {
-            "patient_range": {}, "medications": [], "diagnoses": [], "lab_filters": [],
+        "intents": ["filter"],
+        "filters": {
+            "patient_id": None, "patient_name": None, "gender": None,
+            "age_range": {}, "medications": [], "diagnoses": [], "lab_filters": [],
             "outcome": None, "admission_year": None,
             "nationality": None, "bmi_category": None, "procedure": None, "mi_type": None,
         },
-
-        "aggregation": {},
-        "extreme":     {},
+        "aggregations": [],
+        "extreme": {},
     }
 
 
 # ── Shared Filter Builder (no duplicate joins, no raw SQL) ──────────────────────
+
+def _get_required_joins(filters: Dict, aggregations: List[Dict]) -> set:
+    """Determine which tables must be joined based on filters AND analytical metrics."""
+    joins = set()
+    
+    # 1. From filters
+    if filters.get("medications"): joins.add("medications")
+    if filters.get("diagnoses"): joins.add("diagnoses")
+    if filters.get("lab_filters"): joins.add("labs")
+    
+    # 2. From aggregations
+    for agg in aggregations:
+        if agg.get("field") == "lab_value": joins.add("labs")
+        gb = str(agg.get("group_by", "")).lower()
+        if gb == "medication": joins.add("medications")
+        if gb == "diagnosis": joins.add("diagnoses")
+        
+    return joins
+
 
 def _build_filtered_query(base_query, filters: Dict, joined: set):
     """
@@ -231,6 +278,8 @@ def _build_filtered_query(base_query, filters: Dict, joined: set):
         base_query = base_query.filter(Patient.admission_date.like(f"{year_str}-%"))
     
     # 4c. New Excel Fields
+    if filters.get("primary_diagnosis"):
+        base_query = base_query.filter(Patient.primary_diagnosis.ilike(f"%{filters['primary_diagnosis'].strip()}%"))
     if filters.get("nationality"):
         base_query = base_query.filter(Patient.nationality.ilike(filters["nationality"].strip()))
     if filters.get("bmi_category"):
@@ -306,176 +355,171 @@ _AGG_FUNC_MAP = {
 
 def aggregate_patients(intent: Dict, session: Session = None) -> Dict:
     """
-    Apply filters then aggregate using SQLAlchemy func expressions.
-
-    Supports:
-      - count patients
-      - avg / sum / min / max on Patient.age or LabResult.value
-      - optional GROUP BY on Patient.gender or Patient.age
-
-    Returns:
-      {"result": value_or_list, "metadata": {"filters_applied": ..., "aggregation": ...}}
+    Refactored to support MULTIPLE aggregations in a single SQL query.
+    Returns: {"result": {metric1: val, metric2: val}, "metadata": {...}}
     """
     db = session or get_db_session()
-    filters    = intent.get("filters", {})
-    agg        = intent.get("aggregation", {})
-    agg_type   = str(agg.get("type", "count")).lower()
-    agg_field  = str(agg.get("field", "")).lower()
-    group_by   = agg.get("group_by")
-
-    agg_func = _AGG_FUNC_MAP.get(agg_type, func.count)
+    filters = intent.get("filters", {})
+    aggs    = intent.get("aggregations", [])
+    if not aggs:
+        return {"result": 0, "metadata": {"status": "no aggregations requested"}}
 
     try:
-        joined: set = set()
-
-        # Decide what column to aggregate over
-        if agg_field == "lab_value":
-            # Ensure labs are joined
-            if "labs" not in joined:
-                # We need the lab marker from lab_filters to be meaningful
-                base_col = LabResult.value
-                agg_col  = agg_func(base_col).label("result")
-            else:
-                base_col = LabResult.value
-                agg_col  = agg_func(base_col).label("result")
-        elif agg_field == "age":
-            base_col = Patient.age
-            agg_col  = agg_func(base_col).label("result")
-        else:
-            # Default: count distinct patients
-            agg_col  = func.count(Patient.patient_id.distinct()).label("result")
-
-        # Build GROUP BY columns
+        joined: set = _get_required_joins(filters, aggs)
+        active_joins: set = set()
+        
+        # 1. Build the Selection List + Group By
+        select_cols = []
         group_col = None
-        if group_by:
-            gb = str(group_by).lower()
-            if gb == "gender":
-                group_col = Patient.gender
-            elif gb == "age":
-                group_col = Patient.age
-            elif gb == "outcome":
-                group_col = Patient.outcome
+        
+        # We only support ONE group_by for now (from the first aggregation that has it)
+        main_gb = next((a.get("group_by") for a in aggs if a.get("group_by")), None)
+        if main_gb:
+            gb = str(main_gb).lower()
+            if gb == "gender":       group_col = Patient.gender
+            elif gb == "age":        group_col = Patient.age
+            elif gb == "outcome":    group_col = Patient.outcome
+            elif gb == "nationality": group_col = Patient.nationality
+            elif gb == "bmi_category":group_col = Patient.bmi_category
+            elif gb == "procedure":   group_col = Patient.procedure
+            elif gb == "mi_type":     group_col = Patient.mi_type
+            elif gb == "complications":group_col = Patient.complications
+            elif gb == "diagnosis":   group_col = Diagnosis.diagnosis_name
+            elif gb == "medication":  group_col = Medication.med_name
             elif gb in ["year", "admission_year"]:
                 group_col = func.substr(Patient.admission_date, 1, 4)
-            elif gb == "nationality":
-                group_col = Patient.nationality
-            elif gb == "bmi_category":
-                group_col = Patient.bmi_category
-            elif gb == "procedure":
-                group_col = Patient.procedure
-            elif gb == "mi_type":
-                group_col = Patient.mi_type
-            elif gb == "complications":
-                group_col = Patient.complications
+            
+            if group_col is not None:
+                select_cols.append(group_col)
 
+        # 2. Map Metrics to SQL Columns
+        for i, agg in enumerate(aggs):
+            a_type  = str(agg.get("type", "count")).lower()
+            a_field = str(agg.get("field", "")).lower()
+            a_func  = _AGG_FUNC_MAP.get(a_type, func.count)
+            
+            # Label the column uniquely for extraction
+            label = f"metric_{i}"
+            
+            if a_field == "lab_value":
+                col = a_func(LabResult.value).label(label)
+            elif a_field == "age":
+                col = a_func(Patient.age).label(label)
+            else:
+                col = func.count(Patient.patient_id.distinct()).label(label)
+            
+            select_cols.append(col)
 
-        # Construct query
-        select_cols = [agg_col]
-        if group_col is not None:
-            select_cols = [group_col, agg_col]
-
+        # 3. Create query and apply Joins
         query = db.query(*select_cols)
-
-        # If we need lab aggregation and labs not yet joined
-        if agg_field == "lab_value" and "labs" not in joined:
+        if "medications" in joined:
+            query = query.join(Medication, Patient.patient_id == Medication.patient_id)
+            active_joins.add("medications")
+        if "diagnoses" in joined:
+            query = query.join(Diagnosis, Patient.patient_id == Diagnosis.patient_id)
+            active_joins.add("diagnoses")
+        if "labs" in joined:
             query = query.join(LabResult, Patient.patient_id == LabResult.patient_id)
-            joined.add("labs")
+            active_joins.add("labs")
 
-        # Apply filters
-        query = _build_filtered_query(query, filters, joined)
+        # 4. Apply Filters using standard logic
+        query = _build_filtered_query(query, filters, active_joins)
 
+        # 5. Execute and Format
         if group_col is not None:
             query = query.group_by(group_col)
             rows = query.all()
-            result = [{"group": r[0], "value": _safe_round(r[1])} for r in rows]
+            
+            final_result = []
+            for r in rows:
+                metrics = {}
+                for i, agg in enumerate(aggs):
+                    label = f"metric_{i}"
+                    val = r[i+1]
+                    field = agg.get('field', 'patients')
+                    metrics[f"{agg['type']}_{field}"] = _safe_round(val)
+                final_result.append({"group": r[0], "metrics": metrics})
         else:
-            row    = query.first()
-            result = _safe_round(row[0]) if row else 0
+            row = query.first()
+            final_result = {}
+            for i, agg in enumerate(aggs):
+                val = row[i] if row else 0
+                field = agg.get('field', 'patients')
+                final_result[f"{agg['type']}_{field}"] = _safe_round(val)
+
 
         return {
-            "result": result,
+            "result": final_result,
             "metadata": {
                 "filters_applied": _summarise_filters(filters),
-                "aggregation": agg,
+                "aggregations": aggs,
+                "joins": list(active_joins)
             },
         }
 
     except Exception as e:
+        import traceback
         print(f"[query_engine] aggregate_patients error: {e}")
-        return {
-            "result":   None,
-            "error":    str(e),
-            "metadata": {"filters_applied": _summarise_filters(filters), "aggregation": agg},
-        }
+        print(traceback.format_exc())
+        return {"result": None, "error": str(e)}
     finally:
-        if not session:
-            db.close()
+        if not session: db.close()
+
 
 
 # ── Step 3: Router ───────────────────────────────────────────────────────────────
 
 def route_intent(intent_json: Dict) -> Dict:
     """
-    Dispatch a parsed intent dict to the correct handler and return a
-    uniform result envelope:
-
-        {"result": ..., "metadata": {"filters_applied": ..., ...}}
-
-    Intent values:
-        "filter"      → filter_patients()
-        "lookup"      → find_patient()
-        "extreme"     → find_extreme_lab_cases()
-        "aggregation" → aggregate_patients()
+    Updated for MULTI-INTENT compatibility.
+    Sequentially processes filter, extreme, and aggregation.
     """
-    intent  = intent_json.get("intent", "filter")
+    intents = intent_json.get("intents", ["filter"])
     filters = intent_json.get("filters", {})
     extreme = intent_json.get("extreme", {})
+    
+    if "error" in intent_json:
+        return intent_json
+
+    results = {}
 
     try:
-        if intent == "lookup":
-            patients = find_patient(
+        # Sequential Execution Logic
+        # 1. Lookup (if present, usually independent)
+        if "lookup" in intents:
+            results["lookup"] = find_patient(
                 patient_id=filters.get("patient_id"),
                 name=filters.get("patient_name"),
             )
-            return {
-                "result":   patients,
-                "metadata": {"filters_applied": _summarise_filters(filters), "intent": intent},
-            }
 
-        elif intent == "filter":
-            # Remap query_engine filter schema → patient_data_agent entities schema
+        # 2. Filter (Patient List)
+        if "filter" in intents:
             entities = _filters_to_entities(filters)
-            patients = filter_patients(entities)
-            return {
-                "result":   patients,
-                "metadata": {"filters_applied": _summarise_filters(filters), "intent": intent},
-            }
+            results["patients"] = filter_patients(entities)
 
-        elif intent == "extreme":
+        # 3. Aggregation (Statistical metrics)
+        if "aggregation" in intents:
+            results["aggregation"] = aggregate_patients(intent_json)
+
+        # 4. Extreme cases
+        if "extreme" in intents:
             marker = extreme.get("marker") or _first_lab_marker(filters)
             top_n  = int(extreme.get("top_n") or 5)
             order  = "asc" if str(extreme.get("type", "top")).lower() == "bottom" else "desc"
-            cases  = find_extreme_lab_cases(marker=marker or "HbA1c", top_n=top_n, order=order)
-            return {
-                "result":   cases,
-                "metadata": {
-                    "filters_applied": _summarise_filters(filters),
-                    "intent":  intent,
-                    "marker":  marker,
-                    "top_n":   top_n,
-                    "order":   order,
-                },
+            results["extreme"] = find_extreme_lab_cases(marker=marker or "HbA1c", top_n=top_n, order=order)
+
+        return {
+            "result":   results,
+            "metadata": {
+                "filters_applied": _summarise_filters(filters),
+                "intents": intents
             }
-
-        elif intent == "aggregation":
-            return aggregate_patients(intent_json)
-
-        else:
-            return {"result": None, "error": f"Unknown intent: '{intent}'", "metadata": {}}
+        }
 
     except Exception as e:
         print(f"[query_engine] route_intent error: {e}")
-        return {"result": None, "error": str(e), "metadata": {"intent": intent}}
+        return {"result": None, "error": str(e), "metadata": {"intents": intents}}
+
 
 
 # ── Public End-to-End Helper ─────────────────────────────────────────────────────
@@ -539,8 +583,11 @@ def _summarise_filters(filters: Dict) -> Dict:
         summary["age_range"] = ar
     if filters.get("medications"):  summary["medications"]  = filters["medications"]
     if filters.get("diagnoses"):    summary["diagnoses"]    = filters["diagnoses"]
+    if filters.get("primary_diagnosis"): summary["primary_diagnosis"] = filters["primary_diagnosis"]
+    if filters.get("mi_type"):      summary["mi_type"]      = filters["mi_type"]
     if filters.get("outcome"):      summary["outcome"]      = filters["outcome"]
     if filters.get("admission_year"): summary["admission_year"] = filters["admission_year"]
+
     if filters.get("nationality"):  summary["nationality"]  = filters["nationality"]
     if filters.get("bmi_category"): summary["bmi_category"] = filters["bmi_category"]
     if filters.get("procedure"):    summary["procedure"]    = filters["procedure"]
