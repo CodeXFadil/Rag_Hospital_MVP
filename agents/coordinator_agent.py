@@ -33,7 +33,7 @@ from agents.router_agent import (
     INTENT_POPULATION,
     INTENT_ANALYTICS,
 )
-from agents.query_engine import parse_query_to_intent, route_intent
+from agents.query_engine import parse_query_to_intent, route_intent, compact_intent
 from agents.patient_data_agent import find_patient, get_all_patients
 from agents.notes_agent import get_relevant_notes
 from agents.clinical_reasoning_agent import analyse_patient, analyse_multiple_patients
@@ -104,7 +104,7 @@ def _resolve_patients(intent_data: Dict, query: str) -> list:
         return {
             "intent": "aggregation", 
             "result": res.get("result"),
-            "analytical_intent": analytical_intent,
+            "analytical_intent": compact_intent(analytical_intent),
             "sql": res.get("metadata", {}).get("sql")
         }
 
