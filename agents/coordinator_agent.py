@@ -105,7 +105,7 @@ def _resolve_patients(intent_data: Dict, query: str) -> list:
             "intent": "aggregation", 
             "result": res.get("result"),
             "analytical_intent": analytical_intent,
-            "sql": res.get("sql")
+            "sql": res.get("metadata", {}).get("sql")
         }
 
     if is_population and not has_narrow_filter:
@@ -165,10 +165,9 @@ def _build_prompt(
                 # Search for any value that looks like a count OR use the first metric found
                 matched_count = next((v for k, v in res.items() if "count" in k), 0)
                 if matched_count == 0 and res:
-                    # If it's an aggregation like 'avg_age', we know at least some patients matched
-                    # We can't know the exact count without another query, so we use 1 as a "found" signal
-                    # for the LLM to avoid saying "0 patients found"
-                    matched_count = "N/A (Aggregation Result Provided)"
+                    # If it's an aggregation like 'avg_age', we know at least some patients matched.
+                    # Use a descriptive string to signal to the LLM that data IS available.
+                    matched_count = f"Census matching cohorts found ({len(res)} metrics)"
             elif isinstance(res, list):
                 matched_count = sum(item["metrics"].get("count_patients", 0) for item in res if "metrics" in item)
             else:

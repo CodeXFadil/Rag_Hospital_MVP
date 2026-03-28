@@ -266,7 +266,14 @@ def _build_filtered_query(base_query, filters: Dict, joined: set):
 
     # 3. Gender
     if filters.get("gender"):
-        base_query = base_query.filter(Patient.gender.ilike(filters["gender"].strip()))
+        g = str(filters["gender"]).strip().lower()
+        if g.startswith("f"): 
+            gender_val = "F"
+        elif g.startswith("m"): 
+            gender_val = "M"
+        else: 
+            gender_val = g
+        base_query = base_query.filter(Patient.gender.ilike(gender_val))
 
     # 4. Age range
     age_range = filters.get("age_range") or {}
