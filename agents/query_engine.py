@@ -67,12 +67,18 @@ INTENT_SCHEMA = {
         "age_range":    {"min": None, "max": None},
         "medications":  [],
         "diagnoses":    [],
-        "outcome":      None,
+        "primary_diagnosis": None,  # For exact matching on primary label
+        "mi_type":      None,        # STEMI | NSTEMI
+        "icu_admission": None,       # Yes | No
+        "outcome":      None,        # Discharged | Deceased | etc.
+        "death_flag":   None,        # 1 (Deceased) | 0 (Discharged)
         "admission_year": None,
         "nationality":  None,
         "bmi_category": None,
         "procedure":    None,
-        "mi_type":      None,
+        "risk_smoking": None,
+        "risk_hypertension": None,
+        "risk_diabetes": None,
         "lab_filters":  [
             {"marker": None, "operator": "> | < | >= | <= | = | !=", "value": None}
         ],
@@ -80,8 +86,8 @@ INTENT_SCHEMA = {
     "aggregations": [
         {
             "type":     "count | avg | sum | min | max",
-            "field":    "age | lab_value | length_of_stay",
-            "group_by": "gender | age | outcome | year | nationality | bmi_category | procedure | mi_type | medication | diagnosis",
+            "field":    "age | lab_value | length_of_stay | death_flag",
+            "group_by": "gender | age | outcome | year | nationality | bmi_category | procedure | mi_type | medication | diagnosis | primary_diagnosis | icu_admission",
         }
     ],
     "extreme": {
@@ -95,7 +101,10 @@ INTENT_SCHEMA = {
 _SYSTEM_PROMPT = (
     "- Identify ALL intents: filter, aggregation, extreme, or lookup\n"
     "- For analytical questions (e.g., 'How many X...'), include BOTH 'filter' and 'aggregation' intents.\n"
-    "- Extract filters (age, gender, medications, diagnosis, lab markers) into the 'filters' object.\n"
+    "- Use 'primary_diagnosis' for main diagnoses mentioned by the user.\n"
+    "- Use 'death_flag' for mortality queries (avg of death_flag = mortality rate).\n"
+    "- Use 'mi_type' to distinguish between STEMI and NSTEMI cases.\n"
+    "- Extract filters (age, gender, medications, diagnosis, lab markers, risk factors) into the 'filters' object.\n"
     "- Support multiple aggregations in the 'aggregations' list. EACH aggregation must use the shared 'filters'.\n"
     "- Standardise lab marker names to: HbA1c, BP, LDL, eGFR, Glucose, Cholesterol\n"
     "- Only return valid JSON. No explanations.\n"
@@ -184,6 +193,13 @@ def normalize_intent(intent: Dict, query: str) -> Dict:
                 filters["age_range"] = rules["age_range"]
             if "bmi_category" in rules:
                 filters["bmi_category"] = rules["bmi_category"]
+
+    # 1b. Clinical Boolean Normalization (ICU, etc)
+    icu = filters.get("icu_admission")
+    if icu is True or str(icu).lower() in ["yes", "1", "true"]:
+        filters["icu_admission"] = "Yes"
+    elif icu is False or str(icu).lower() in ["no", "0", "false"]:
+        filters["icu_admission"] = "No"
 
 
     # 2. Normalize Lab Operators
@@ -316,8 +332,20 @@ def _build_filtered_query(base_query, filters: Dict, joined: set):
         base_query = base_query.filter(Patient.bmi_category.ilike(filters["bmi_category"].strip()))
     if filters.get("procedure"):
         base_query = base_query.filter(Patient.procedure.ilike(filters["procedure"].strip()))
-    if filters.get("mi_type"):
-        base_query = base_query.filter(Patient.mi_type.ilike(filters["mi_type"].strip()))
+    if i_type := filters.get("mi_type"):
+        base_query = base_query.filter(Patient.mi_type.ilike(str(i_type).strip()))
+    if icu := filters.get("icu_admission"):
+        base_query = base_query.filter(Patient.icu_admission.ilike(str(icu).strip()))
+    if (d_flag := filters.get("death_flag")) is not None:
+        base_query = base_query.filter(Patient.death_flag == int(d_flag))
+    
+    # 4d. Risk Factors
+    if r_smoke := filters.get("risk_smoking"):
+        base_query = base_query.filter(Patient.risk_smoking.ilike(str(r_smoke).strip()))
+    if r_hyper := filters.get("risk_hypertension"):
+        base_query = base_query.filter(Patient.risk_hypertension.ilike(str(r_hyper).strip()))
+    if r_diabetes := filters.get("risk_diabetes"):
+        base_query = base_query.filter(Patient.risk_diabetes.ilike(str(r_diabetes).strip()))
 
 
     # 5. Medications — join once only
@@ -415,7 +443,8 @@ def aggregate_patients(intent: Dict, session: Session = None) -> Dict:
             elif gb == "mi_type":     group_col = Patient.mi_type
             elif gb == "complications":group_col = Patient.complications
             elif gb == "diagnosis":   group_col = Diagnosis.diagnosis_name
-            elif gb == "medication":  group_col = Medication.med_name
+            elif gb == "primary_diagnosis": group_col = Patient.primary_diagnosis
+            elif gb == "icu_admission":     group_col = Patient.icu_admission
             elif gb in ["year", "admission_year"]:
                 group_col = func.substr(Patient.admission_date, 1, 4)
             
@@ -437,6 +466,8 @@ def aggregate_patients(intent: Dict, session: Session = None) -> Dict:
                 col = a_func(Patient.age).label(label)
             elif a_field == "length_of_stay":
                 col = a_func(Patient.length_of_stay).label(label)
+            elif a_field == "death_flag":
+                col = a_func(Patient.death_flag).label(label)
             else:
                 # Default to counting distinct patients
                 col = func.count(Patient.patient_id.distinct()).label(label)
