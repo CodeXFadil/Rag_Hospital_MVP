@@ -329,6 +329,7 @@ def process_query(query: str) -> dict:
         pname  = intent_data["extracted_patient_name"]
 
         # ── Step 2a: Structured retrieval ──────────────────────────────
+        t1 = time.time()
         patients = _resolve_patients(intent_data, query)
         result["timings"]["structured_retrieval"] = round(time.time() - t1, 3)
         
