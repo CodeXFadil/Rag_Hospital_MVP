@@ -103,10 +103,13 @@ def _resolve_patients(intent_data: Dict, query: str) -> list:
 
     if is_population and not has_narrow_filter:
         # No specific filter — return all patients for counting / grouping
-        return get_all_patients()
+        return get_all_patients(lightweight=True)
 
     if entities:
-        return filter_patients(entities)
+        # Use lightweight for any broad multi-patient lookup
+        is_single_lookup = bool(entities.get("patient_id") or entities.get("patient_name"))
+        return filter_patients(entities, lightweight=not is_single_lookup)
+
 
     return []
 
@@ -131,8 +134,9 @@ def _build_prompt(
 
     # 1. Database Metadata & Search Result Count
     try:
-        # Optimization: Do NOT load 5,000 patients just for metadata counts
-        all_patients  = get_all_patients()
+        # Optimization: Use lightweight for ALL meta-counts
+        all_patients  = get_all_patients(lightweight=True)
+
         total_count   = len(all_patients)
         
         # Cap population scan at 1,000 for gender counts to save memory/tokens

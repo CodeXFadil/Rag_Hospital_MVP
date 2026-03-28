@@ -6,7 +6,7 @@ eager loading, and production-grade session management.
 Models and DB setup live in data/database.py — import from there.
 """
 
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import joinedload, Session
 from sqlalchemy import func
 
@@ -19,8 +19,10 @@ from data.database import (
 
 # ── Retrieval Logic with Eager Loading ──────────────────────────────────────────
 
-def find_patient(patient_id: Optional[str] = None, name: Optional[str] = None, session: Session = None) -> List[Dict]:
-    """Look up patient with pre-loaded relationships to avoid N+1 queries."""
+def find_patient(patient_id: Optional[str] = None, name: Optional[str] = None, session: Session = None, return_query: bool = False) -> Any:
+    """Look up patient with pre-loaded relationships to avoid N+1 queries.
+    If return_query=True, returns the SQLAlchemy Query object instead of serialized results.
+    """
     db = session or get_db_session()
     try:
         query = db.query(Patient).options(
@@ -33,21 +35,28 @@ def find_patient(patient_id: Optional[str] = None, name: Optional[str] = None, s
         if name:
             query = query.filter(Patient.name.ilike(f"%{name.strip()}%"))
 
+        if return_query:
+            return query
+
         results = query.all()
         return [serialize_patient(p) for p in results]
     finally:
-        if not session: db.close()
+        # Only close if we are EXECUTING here; if returning query, caller must manage session
+        if not session and not return_query: db.close()
 
 
-def filter_patients(entities: Dict, session: Session = None) -> List[Dict]:
-    """Apply multiple structured filters using optimized SQL JOINs."""
+def filter_patients(entities: Dict, lightweight: bool = False, session: Session = None) -> List[Dict]:
+    """Apply multiple structured filters. Uses lightweight mode for broad queries."""
     db = session or get_db_session()
     try:
-        query = db.query(Patient).options(
-            joinedload(Patient.medications),
-            joinedload(Patient.diagnoses),
-            joinedload(Patient.lab_results)
-        )
+        query = db.query(Patient)
+        if not lightweight:
+            query = query.options(
+                joinedload(Patient.medications),
+                joinedload(Patient.diagnoses),
+                joinedload(Patient.lab_results)
+            )
+
 
         # 1. Identity Filters
         pid = entities.get("patient_id")
@@ -122,7 +131,8 @@ def filter_patients(entities: Dict, session: Session = None) -> List[Dict]:
         _apply_text_filter(Patient.mi_type,      "mi_type")
 
         results = query.all()
-        return [serialize_patient(p) for p in results]
+        return [serialize_patient(p, lightweight=lightweight) for p in results]
+
 
     finally:
         if not session: db.close()
@@ -171,21 +181,26 @@ def get_lab_statistics(marker: str, session: Session = None) -> Dict:
         if not session: db.close()
 
 
-def find_extreme_lab_cases(marker: str, top_n: int = 5, order: str = "desc", session: Session = None) -> List[Dict]:
-    """Find patients with the highest/lowest values for a specific lab marker."""
+def find_extreme_lab_cases(marker: str, top_n: int = 5, order: str = "desc", session: Session = None, return_query: bool = False) -> Any:
+    """Find patients with the highest/lowest values for a specific lab marker.
+    If return_query=True, returns the SQLAlchemy Query object instead of serialized results.
+    """
     db = session or get_db_session()
     try:
         order_func = LabResult.value.desc() if order == "desc" else LabResult.value.asc()
-        results = (
+        query = (
             db.query(Patient, LabResult.value)
             .join(LabResult)
             .filter(LabResult.marker.ilike(marker))
             .options(joinedload(Patient.medications), joinedload(Patient.diagnoses))
             .order_by(order_func)
             .limit(top_n)
-            .all()
         )
 
+        if return_query:
+            return query
+
+        results = query.all()
         cases = []
         for p, val in results:
             ser = serialize_patient(p)
@@ -193,28 +208,32 @@ def find_extreme_lab_cases(marker: str, top_n: int = 5, order: str = "desc", ses
             cases.append(ser)
         return cases
     finally:
-        if not session: db.close()
+        if not session and not return_query: db.close()
 
 
-def get_all_patients(session: Session = None) -> List[Dict]:
-    """Return all patients with eager-loaded relationships."""
+def get_all_patients(lightweight: bool = True, session: Session = None) -> List[Dict]:
+    """Return all patients. Defaults to lightweight (no notes/joins) for performance."""
     db = session or get_db_session()
     try:
-        patients = db.query(Patient).options(
-            joinedload(Patient.medications),
-            joinedload(Patient.diagnoses),
-            joinedload(Patient.lab_results)
-        ).all()
-        return [serialize_patient(p) for p in patients]
+        query = db.query(Patient)
+        if not lightweight:
+            query = query.options(
+                joinedload(Patient.medications),
+                joinedload(Patient.diagnoses),
+                joinedload(Patient.lab_results)
+            )
+        patients = query.all()
+        return [serialize_patient(p, lightweight=lightweight) for p in patients]
     finally:
         if not session: db.close()
 
 
+
 # ── Serialization ────────────────────────────────────────────────────────────────
 
-def serialize_patient(p: Patient) -> Dict:
-    """Convert an ORM Patient object to a plain dictionary."""
-    return {
+def serialize_patient(p: Patient, lightweight: bool = False) -> Dict:
+    """Convert an ORM Patient object to a plain dictionary. Skips notes/joins if lightweight."""
+    data = {
         "patient_id":   p.patient_id,
         "episode_id":   p.episode_id,
         "name":         p.name,
@@ -222,28 +241,34 @@ def serialize_patient(p: Patient) -> Dict:
         "gender":       p.gender,
         "nationality":  p.nationality,
         "admission_date": p.admission_date,
-        "discharge_date": p.discharge_date,
-        "length_of_stay": p.length_of_stay,
         "primary_diagnosis": p.primary_diagnosis,
         "mi_type":      p.mi_type,
-        "risk_factors": {
-            "smoking": p.risk_smoking,
-            "hypertension": p.risk_hypertension,
-            "diabetes": p.risk_diabetes,
-            "bmi": p.bmi_category
-        },
         "icu_admission": p.icu_admission,
-        "procedure":     p.procedure,
-        "complications": p.complications,
         "outcome":       p.outcome,
-        "death_flag":    p.death_flag,
-        "diagnoses":    ", ".join([d.diagnosis_name for d in p.diagnoses]),
-        "medications":  ", ".join([m.med_name for m in p.medications]),
-        "lab_results":  ", ".join([
-            f"{l.marker}: {l.value}{' ' + l.unit if l.unit else ''}"
-            for l in p.lab_results
-        ]),
-        "doctor_notes": p.doctor_notes,
-        "visit_history": p.visit_history,
     }
+    
+    if not lightweight:
+        data.update({
+            "discharge_date": p.discharge_date,
+            "length_of_stay": p.length_of_stay,
+            "risk_factors": {
+                "smoking": p.risk_smoking,
+                "hypertension": p.risk_hypertension,
+                "diabetes": p.risk_diabetes,
+                "bmi": p.bmi_category
+            },
+            "procedure":     p.procedure,
+            "complications": p.complications,
+            "death_flag":    p.death_flag,
+            "diagnoses":    ", ".join([d.diagnosis_name for d in p.diagnoses]),
+            "medications":  ", ".join([m.med_name for m in p.medications]),
+            "lab_results":  ", ".join([
+                f"{l.marker}: {l.value}{' ' + l.unit if l.unit else ''}"
+                for l in p.lab_results
+            ]),
+            "doctor_notes": p.doctor_notes,
+            "visit_history": p.visit_history,
+        })
+    return data
+
 

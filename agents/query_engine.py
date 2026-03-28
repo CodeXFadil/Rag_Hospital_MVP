@@ -140,7 +140,13 @@ def normalize_intent(intent: Dict, query: str) -> Dict:
     q_lower = query.lower()
     filters = intent.setdefault("filters", {})
     
+    # 0. Basic Normalization (Gender)
+    g = str(filters.get("gender", "")).lower()
+    if "female" in g or g == "f": filters["gender"] = "F"
+    elif "male" in g or g == "m":  filters["gender"] = "M"
+
     # 1. Apply Derived Rules
+
     for term, rules in DERIVED_RULES.items():
         if term in q_lower:
             # Merge rules into filters
@@ -428,6 +434,7 @@ def aggregate_patients(intent: Dict, session: Session = None) -> Dict:
         # 5. Execute and Format
         if group_col is not None:
             query = query.group_by(group_col)
+            sql_str = _compile_query(query)
             rows = query.all()
             
             final_result = []
@@ -440,6 +447,7 @@ def aggregate_patients(intent: Dict, session: Session = None) -> Dict:
                     metrics[f"{agg['type']}_{field}"] = _safe_round(val)
                 final_result.append({"group": r[0], "metrics": metrics})
         else:
+            sql_str = _compile_query(query)
             row = query.first()
             final_result = {}
             for i, agg in enumerate(aggs):
@@ -453,9 +461,11 @@ def aggregate_patients(intent: Dict, session: Session = None) -> Dict:
             "metadata": {
                 "filters_applied": _summarise_filters(filters),
                 "aggregations": aggs,
-                "joins": list(active_joins)
+                "joins": list(active_joins),
+                "sql": sql_str
             },
         }
+
 
     except Exception as e:
         import traceback
@@ -481,44 +491,81 @@ def route_intent(intent_json: Dict) -> Dict:
     if "error" in intent_json:
         return intent_json
 
+    db = get_db_session()
     results = {}
 
     try:
+        current_sql = []
+
         # Sequential Execution Logic
         # 1. Lookup (if present, usually independent)
         if "lookup" in intents:
-            results["lookup"] = find_patient(
+            from agents.patient_data_agent import serialize_patient
+            q = find_patient(
                 patient_id=filters.get("patient_id"),
                 name=filters.get("patient_name"),
+                session=db,
+                return_query=True
             )
+            current_sql.append(_compile_query(q))
+            results["lookup"] = [serialize_patient(p) for p in q.all()]
 
         # 2. Filter (Patient List)
         if "filter" in intents:
+            from data.database import Patient
+            query = db.query(Patient)
+            joined = set()
+            query = _build_filtered_query(query, filters, joined)
+            current_sql.append(_compile_query(query))
             entities = _filters_to_entities(filters)
-            results["patients"] = filter_patients(entities)
+            # Lightweight fetch + Cap at 10 for UI preview to avoid truncation
+            results["patients"] = filter_patients(entities, lightweight=True)[:10]
 
         # 3. Aggregation (Statistical metrics)
         if "aggregation" in intents:
-            results["aggregation"] = aggregate_patients(intent_json)
+            agg_res = aggregate_patients(intent_json, session=db)
+            results["aggregation"] = agg_res
+            if agg_res.get("metadata", {}).get("sql"):
+                current_sql.append(agg_res.get("metadata", {}).get("sql"))
 
         # 4. Extreme cases
         if "extreme" in intents:
             marker = extreme.get("marker") or _first_lab_marker(filters)
             top_n  = int(extreme.get("top_n") or 5)
             order  = "asc" if str(extreme.get("type", "top")).lower() == "bottom" else "desc"
-            results["extreme"] = find_extreme_lab_cases(marker=marker or "HbA1c", top_n=top_n, order=order)
+            
+            q = find_extreme_lab_cases(
+                marker=marker or "HbA1c", 
+                top_n=top_n, 
+                order=order, 
+                session=db,
+                return_query=True
+            )
+            current_sql.append(_compile_query(q))
+            
+            # Execute and format
+            from agents.patient_data_agent import serialize_patient
+            results["extreme"] = []
+            for p, val in q.all():
+                ser = serialize_patient(p)
+                ser["extracted_value"] = val
+                results["extreme"].append(ser)
 
         return {
             "result":   results,
             "metadata": {
                 "filters_applied": _summarise_filters(filters),
-                "intents": intents
+                "intents": intents,
+                "sql": "\n\n".join(current_sql) if current_sql else None
             }
         }
 
     except Exception as e:
         print(f"[query_engine] route_intent error: {e}")
         return {"result": None, "error": str(e), "metadata": {"intents": intents}}
+    finally:
+        db.close()
+
 
 
 
@@ -602,3 +649,16 @@ def _safe_round(value: Any, decimals: int = 2) -> Any:
     if isinstance(value, float):
         return round(value, decimals)
     return value
+
+def _compile_query(query) -> str:
+    """Helper to convert a SQLAlchemy query object to a raw SQL string."""
+    try:
+        from sqlalchemy.dialects import sqlite
+        sql = str(query.statement.compile(dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True}))
+        print(f"\n[SQL DEBUG] Generated SQL:\n{sql}\n", flush=True)
+        return sql
+    except Exception as e:
+        err = f"-- Error compiling SQL: {e}"
+        print(f"\n[SQL DEBUG] {err}\n", flush=True)
+        return err
+

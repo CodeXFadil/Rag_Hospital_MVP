@@ -50,10 +50,11 @@ SYSTEM_PROMPT = (
     "9. 'outcome': only populate if the query asks for deaths, survival, deceased, or discharged patients (e.g. exactly 'Deceased' or 'Discharged'). Otherwise null.\n"
     "10. 'admission_year': only populate if a specific year (e.g. 2021) is mentioned. Otherwise null.\n"
     "11. 'primary_intent' rules:\n"
-    "    - Use 'analytics_query' if the user asks for a 'distribution', 'trends', 'by year', 'by outcome', 'average age', 'count by', or 'group by'.\n"
-    "    - CRITICAL: If the user asks to 'group patients by year', this is ALWAYS an 'analytics_query', NOT a 'population_query'.\n"
+    "    - Use 'analytics_query' if the user asks for a 'distribution', 'trends', 'by year', 'by outcome', 'average', 'mean', 'count by', or 'group by'.\n"
+    "    - CRITICAL: If the user asks for 'average age' or 'how many patients with X', this is ALWAYS an 'analytics_query', NOT a 'population_query'.\n"
     "    - Use 'population_query' only for simple lists or finding many patients without statistical grouping.\n"
     "    - Use 'patient_summary' for one person."
+
 )
 
 SCHEMA_PROMPT = """Return JSON with null for any field not present in the query:
