@@ -332,13 +332,13 @@ def process_query(query: str) -> dict:
         patients = _resolve_patients(intent_data, query)
         result["timings"]["structured_retrieval"] = round(time.time() - t1, 3)
         
-        # If patients is a dict (from Analytics), it contains metadata
-        if isinstance(patients, dict) and "analytical_intent" in patients:
-            result["analytical_intent"] = patients["analytical_intent"]
+        # If patients is a dict, it contains metadata (from Analytics or Filtered structured lookups)
+        if isinstance(patients, dict):
+            result["analytical_intent"] = patients.get("analytical_intent")
             result["sql"]               = patients.get("sql")
-            result["patients"]          = patients # Keep the full dict for the synthesizer
+            result["patients"]          = patients.get("result", patients.get("patients", []))
         else:
-            result["patients"] = patients
+            result["patients"]          = patients
 
         # ── Step 2b: Semantic retrieval ────────────────────────────────
         t2 = time.time()

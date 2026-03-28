@@ -142,7 +142,21 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
         const intentDebug = data.intent || {};
         const timings     = data.timings  || {};
         const analytical  = data.analytical_intent || {};
-        const sql         = data.sql || [];
+        const sqlArr = Array.isArray(data.sql) ? data.sql : (data.sql ? [data.sql] : []);
+        let retrievalSql = "N/A";
+        let analyticalSql = "N/A";
+
+        if (sqlArr.length >= 2) {
+          retrievalSql = sqlArr[0];
+          analyticalSql = sqlArr[1];
+        } else if (sqlArr.length === 1) {
+          const s = sqlArr[0].toLowerCase();
+          if (s.includes("avg(") || s.includes("count(") || s.includes("sum(") || s.includes("max(") || s.includes("min(")) {
+            analyticalSql = sqlArr[0];
+          } else {
+            retrievalSql = sqlArr[0];
+          }
+        }
 
         const debugLines = [
           `High-level Intent : ${intentDebug.primary_intent || "unknown"}`,
@@ -154,10 +168,10 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
           `This system uses two distinct SQL engines to ensure clinical accuracy:`,
           ``,
           `## 2a. Clinical Context Discovery (Retrieval)`,
-          `${Array.isArray(sql) ? sql[0] : "N/A"}`,
+          `${retrievalSql}`,
           ``,
           `## 2b. Analytical Computation (Execution)`,
-          `${Array.isArray(sql) && sql.length > 1 ? sql[1] : (Array.isArray(sql) ? "N/A" : sql)}`,
+          `${analyticalSql}`,
           ``,
           `# Results Information`,
           `Patients matched  : ${

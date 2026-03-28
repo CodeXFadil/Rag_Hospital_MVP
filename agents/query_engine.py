@@ -620,7 +620,7 @@ def route_intent(intent_json: Dict) -> Dict:
             "metadata": {
                 "filters_applied": _summarise_filters(filters),
                 "intents": intents,
-                "sql": "\n\n".join(current_sql) if current_sql else None
+                "sql": current_sql if current_sql else None
             }
         }
 
