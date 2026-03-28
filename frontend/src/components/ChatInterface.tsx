@@ -140,14 +140,11 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
 
         // ── Debug panel: show real analytical intent and SQL ───────────
         const intentDebug = data.intent || {};
-        const entities    = intentDebug.entities || {};
         const timings     = data.timings  || {};
         const analytical  = data.analytical_intent || {};
         const sql         = data.sql || [];
 
         const debugLines = [
-          `**🔍 Debug — Clinical Reasoning Engine**`,
-          `\`\`\``,
           `High-level Intent : ${intentDebug.primary_intent || "unknown"}`,
           ``,
           `# Step 1: LLM Intent (JSON)`,
@@ -163,16 +160,13 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
               : (Array.isArray(data.patients) ? data.patients.length : 0)
           }`,
           `Timings (s)       : router=${timings.router_llm ?? "-"} | db=${timings.structured_retrieval ?? "-"} | llm=${timings.synthesis_llm ?? "-"} | total=${timings.total ?? "-"}`,
-          `\`\`\``,
         ].join("\n");
-
-        text += "\n\n---\n" + debugLines;
-        // ───────────────────────────────────────────────────────────────
 
         const aiMsg: Message = {
           id: (Date.now() + 1).toString(),
           role: "assistant",
           content: text,
+          debug: debugLines,
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, aiMsg]);

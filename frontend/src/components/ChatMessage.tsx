@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
-import { Bot, User, Copy, CheckCheck } from "lucide-react";
+import { Bot, User, Copy, CheckCheck, ChevronDown, ChevronUp, Search } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 
@@ -9,6 +9,7 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  debug?: string;
 }
 
 interface ChatMessageProps {
@@ -64,9 +65,26 @@ export function ChatMessage({ message }: ChatMessageProps) {
           {isUser ? (
             <p className="whitespace-pre-wrap">{message.content}</p>
           ) : (
-            <div className="prose prose-sm max-w-none prose-headings:text-foreground prose-headings:font-semibold prose-p:text-foreground prose-strong:text-foreground prose-li:text-foreground prose-code:text-primary prose-code:bg-primary-light prose-code:px-1 prose-code:rounded prose-h2:text-base prose-h3:text-sm prose-h2:mt-4 prose-h3:mt-3">
-              <ReactMarkdown>{message.content}</ReactMarkdown>
-            </div>
+            <>
+              <div className="prose prose-sm max-w-none prose-headings:text-foreground prose-headings:font-semibold prose-p:text-foreground prose-strong:text-foreground prose-li:text-foreground prose-code:text-primary prose-code:bg-primary-light prose-code:px-1 prose-code:rounded prose-h2:text-base prose-h3:text-sm prose-h2:mt-4 prose-h3:mt-3">
+                <ReactMarkdown>{message.content}</ReactMarkdown>
+              </div>
+
+              {message.debug && (
+                <div className="mt-4 border-t border-border/50 pt-3">
+                  <details className="group/debug">
+                    <summary className="flex items-center gap-2 text-[10px] uppercase tracking-wider font-bold text-muted-foreground hover:text-primary cursor-pointer list-none">
+                      <Search className="w-3 h-3" />
+                      <span>Debug — Clinical Reasoning Engine</span>
+                      <ChevronDown className="w-3 h-3 ml-auto group-open/debug:rotate-180 transition-transform" />
+                    </summary>
+                    <div className="mt-2 p-2 bg-black/5 rounded border border-border/30 text-[11px] font-mono whitespace-pre-wrap overflow-x-auto max-h-[300px]">
+                      {message.debug}
+                    </div>
+                  </details>
+                </div>
+              )}
+            </>
           )}
 
           {/* Timestamp + copy button */}
