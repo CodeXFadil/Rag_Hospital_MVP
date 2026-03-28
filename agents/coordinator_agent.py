@@ -96,7 +96,7 @@ def _resolve_patients(intent_data: Dict, query: str) -> list:
         # 1. Parse natural language into a structured Query Engine intent
         analytical_intent = parse_query_to_intent(query)
         # 2. Add extra filters from the router to ensure parity
-        analytical_intent["filters"].update(entities)
+        analytical_intent.setdefault("filters", {}).update(entities)
         # 3. Route to the structured query engine
         res = route_intent(analytical_intent)
         
