@@ -80,7 +80,7 @@ INTENT_SCHEMA = {
     "aggregations": [
         {
             "type":     "count | avg | sum | min | max",
-            "field":    "age | lab_value",
+            "field":    "age | lab_value | length_of_stay",
             "group_by": "gender | age | outcome | year | nationality | bmi_category | procedure | mi_type | medication | diagnosis",
         }
     ],
@@ -418,6 +418,8 @@ def aggregate_patients(intent: Dict, session: Session = None) -> Dict:
                 col = a_func(LabResult.value).label(label)
             elif a_field == "age" and a_type != "count":
                 col = a_func(Patient.age).label(label)
+            elif a_field == "length_of_stay":
+                col = a_func(Patient.length_of_stay).label(label)
             else:
                 # Default to counting distinct patients
                 col = func.count(Patient.patient_id.distinct()).label(label)
