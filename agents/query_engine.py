@@ -126,11 +126,28 @@ def parse_query_to_intent(query: str) -> Dict:
         
         # New Pipeline: Normalize then Validate
         normalized = normalize_intent(data, query)
-        return _validate_intent(normalized)
+        validated  = _validate_intent(normalized)
+        return compact_intent(validated)
 
     except Exception as e:
         print(f"[query_engine] parse_query_to_intent failed: {e}")
         return _empty_intent()
+
+
+def compact_intent(data: Any) -> Any:
+    """Recursively remove None, [], and {} values for a cleaner UI view."""
+    if isinstance(data, dict):
+        new_dict = {}
+        for k, v in data.items():
+            compact_v = compact_intent(v)
+            if compact_v is not None and compact_v != [] and compact_v != {}:
+                new_dict[k] = compact_v
+        return new_dict
+    elif isinstance(data, list):
+        new_list = [compact_intent(v) for v in data]
+        return [v for v in new_list if v is not None and v != [] and v != {}]
+    else:
+        return data
 
 
 def normalize_intent(intent: Dict, query: str) -> Dict:
