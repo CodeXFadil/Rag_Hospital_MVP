@@ -26,6 +26,21 @@ The system now supports OpenAI models while continuing to use OpenRouter as the 
 - **Improved Reasoning**: Switched default model to `openai/gpt-4o-mini` for more precise clinical synthesis and intent routing.
 - **Unified Configuration**: All agents now share the same configuration, making it easy to swap providers.
 
+## Clinical Reasoning Engine (Debug Mode)
+
+The system now provides 100% transparency for clinical staff via a **collapsible debug panel** for every query. This allows verification of the "AI Logic" before trusting an answer.
+
+### 1. Advanced Semantic Mapping
+The "Filters" you see in the Intent JSON are **abstractions**, not just raw columns. The engine performs:
+- **1-on-1 Mapping**: Fields like `gender` and `bmi_category` map directly.
+- **Relational Joins**: Fields like `medications` and `diagnoses` trigger automatic SQL JOINs to secondary clinical tables.
+- **Smart Logic**: `age_range` and `admission_year` are translated into range-based and partial-match conditions.
+
+### 2. Dual-SQL Architecture
+The system uses **two distinct SQL iterations** for every analytical request to ensure both context and accuracy:
+- **2a. Clinical Context Discovery (Retrieval)**: Fetches names, histories, and notes so the LLM has a "narrative" to explain.
+- **2b. Analytical Computation (Execution)**: Performs the raw mathematical operation (Average, Sum, Count) on the database for total accuracy.
+
 ## Advanced Structured Querying (LLM-Driven)
 
 The system now supports **Advanced Structured Querying**, moving away from brittle regex-based entity extraction to a robust LLM-driven JSON logic.
