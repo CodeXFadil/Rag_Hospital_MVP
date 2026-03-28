@@ -131,7 +131,7 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
             diagnoses: p.diagnoses?.split(",\n") || [],
             medications: [{ name: p.medications, dosage: "", frequency: "", since: "" }],
             labResults: [{ name: p.lab_results, value: "", unit: "", normalRange: "", status: "normal" }],
-            lastVisit: p.visit_history.split("\n")[0] || "Unknown",
+            lastVisit: p.visit_history?.split("\n")?.[0] || "Unknown",
             ward: "Unknown",
             attendingDoctor: "Unknown",
             notes: "Retrieved from RAG backend"
