@@ -71,6 +71,12 @@ def migrate():
         )
         patients_to_add.append(p)
         
+        # Also populate relational table for clinical reasoning joins
+        if p.primary_diagnosis:
+            db.add(Diagnosis(patient_id=p.patient_id, diagnosis_name=p.primary_diagnosis))
+        if p.mi_type:
+            db.add(Diagnosis(patient_id=p.patient_id, diagnosis_name=p.mi_type))
+        
         # Batch commit for speed
         if len(patients_to_add) >= 500:
             db.add_all(patients_to_add)

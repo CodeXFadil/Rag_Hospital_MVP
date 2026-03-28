@@ -138,32 +138,31 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
           });
         }
 
-        // ── Debug panel: show parsed intent for debugging ──────────────
+        // ── Debug panel: show real analytical intent and SQL ───────────
         const intentDebug = data.intent || {};
         const entities    = intentDebug.entities || {};
         const timings     = data.timings  || {};
+        const analytical  = data.analytical_intent || {};
+        const sql         = data.sql || [];
 
         const debugLines = [
-          `**🔍 Debug — Parsed Intent**`,
+          `**🔍 Debug — Clinical Reasoning Engine**`,
           `\`\`\``,
-          `Intent       : ${intentDebug.primary_intent || "unknown"}`,
-          `Patient ID   : ${entities.patient_id   ?? "null"}`,
-          `Patient Name : ${entities.patient_name ?? "null"}`,
-          `Gender       : ${entities.gender       ?? "null"}`,
-          `Age Range      : min=${entities.age_range?.min ?? "null"}, max=${entities.age_range?.max ?? "null"}`,
-          `Admission Year : ${entities.admission_year ?? "null"}`,
-          `Lab Filters  : ${JSON.stringify(entities.lab_filters ?? [])}`,
-          `Medications  : ${JSON.stringify(entities.medications ?? [])}`,
-          `Patients matched : ${
-            Array.isArray(data.patients) 
-              ? data.patients.length 
-              : (data.patients?.result 
-                  ? (Array.isArray(data.patients.result) 
-                      ? data.patients.result.reduce((a: number, b: any) => a + (b.value || 0), 0) 
-                      : data.patients.result) 
-                  : 0)
+          `High-level Intent : ${intentDebug.primary_intent || "unknown"}`,
+          ``,
+          `# Step 1: LLM Intent (JSON)`,
+          `${JSON.stringify(analytical, null, 2)}`,
+          ``,
+          `# Step 2: Generated SQL`,
+          `${Array.isArray(sql) ? sql.join("\n\n") : sql}`,
+          ``,
+          `# Results Information`,
+          `Patients matched  : ${
+            data.patients?.intent === "aggregation" 
+              ? (typeof data.patients.result === "object" ? "Cohort Found" : data.patients.result)
+              : (Array.isArray(data.patients) ? data.patients.length : 0)
           }`,
-          `Timings (s)  : router=${timings.router_llm ?? "-"} | db=${timings.structured_retrieval ?? "-"} | vec=${timings.vector_search ?? "-"} | llm=${timings.synthesis_llm ?? "-"} | total=${timings.total ?? "-"}`,
+          `Timings (s)       : router=${timings.router_llm ?? "-"} | db=${timings.structured_retrieval ?? "-"} | llm=${timings.synthesis_llm ?? "-"} | total=${timings.total ?? "-"}`,
           `\`\`\``,
         ].join("\n");
 

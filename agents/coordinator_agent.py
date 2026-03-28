@@ -99,7 +99,14 @@ def _resolve_patients(intent_data: Dict, query: str) -> list:
         analytical_intent["filters"].update(entities)
         # 3. Route to the structured query engine
         res = route_intent(analytical_intent)
-        return {"intent": "aggregation", "result": res.get("result")}
+        
+        # NEW: Return the full analytical intent and generated SQL metadata
+        return {
+            "intent": "aggregation", 
+            "result": res.get("result"),
+            "analytical_intent": analytical_intent,
+            "sql": res.get("sql")
+        }
 
     if is_population and not has_narrow_filter:
         # No specific filter — return all patients for counting / grouping
@@ -155,7 +162,13 @@ def _build_prompt(
             res = patients["result"]
             # Multi-metric handling: Extract first count found
             if isinstance(res, dict):
+                # Search for any value that looks like a count OR use the first metric found
                 matched_count = next((v for k, v in res.items() if "count" in k), 0)
+                if matched_count == 0 and res:
+                    # If it's an aggregation like 'avg_age', we know at least some patients matched
+                    # We can't know the exact count without another query, so we use 1 as a "found" signal
+                    # for the LLM to avoid saying "0 patients found"
+                    matched_count = "N/A (Aggregation Result Provided)"
             elif isinstance(res, list):
                 matched_count = sum(item["metrics"].get("count_patients", 0) for item in res if "metrics" in item)
             else:
@@ -316,10 +329,16 @@ def process_query(query: str) -> dict:
         pname  = intent_data["extracted_patient_name"]
 
         # ── Step 2a: Structured retrieval ──────────────────────────────
-        t1 = time.time()
         patients = _resolve_patients(intent_data, query)
         result["timings"]["structured_retrieval"] = round(time.time() - t1, 3)
-        result["patients"] = patients
+        
+        # If patients is a dict (from Analytics), it contains metadata
+        if isinstance(patients, dict) and "analytical_intent" in patients:
+            result["analytical_intent"] = patients["analytical_intent"]
+            result["sql"]               = patients.get("sql")
+            result["patients"]          = patients # Keep the full dict for the synthesizer
+        else:
+            result["patients"] = patients
 
         # ── Step 2b: Semantic retrieval ────────────────────────────────
         t2 = time.time()

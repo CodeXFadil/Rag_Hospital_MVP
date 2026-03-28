@@ -409,15 +409,19 @@ def aggregate_patients(intent: Dict, session: Session = None) -> Dict:
             
             if a_field == "lab_value":
                 col = a_func(LabResult.value).label(label)
-            elif a_field == "age":
+            elif a_field == "age" and a_type != "count":
                 col = a_func(Patient.age).label(label)
             else:
+                # Default to counting distinct patients
                 col = func.count(Patient.patient_id.distinct()).label(label)
+                # Force field name to 'patients' for cleaner output keys if it was 'patients' or ambiguous
+                if a_field in ["", "none", "null", "age", "name"]:
+                    agg["field"] = "patients"
             
             select_cols.append(col)
 
         # 3. Create query and apply Joins
-        query = db.query(*select_cols)
+        query = db.query(*select_cols).select_from(Patient)
         if "medications" in joined:
             query = query.join(Medication, Patient.patient_id == Medication.patient_id)
             active_joins.add("medications")
@@ -487,6 +491,9 @@ def route_intent(intent_json: Dict) -> Dict:
     intents = intent_json.get("intents", ["filter"])
     filters = intent_json.get("filters", {})
     extreme = intent_json.get("extreme", {})
+    
+    # NEW: Log raw intent for transparency
+    print(f"\n[INTENT DEBUG] Raw LLM Intent: {intent_json}\n", flush=True)
     
     if "error" in intent_json:
         return intent_json
