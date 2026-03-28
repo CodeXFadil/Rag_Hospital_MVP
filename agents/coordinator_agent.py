@@ -336,7 +336,12 @@ def process_query(query: str) -> dict:
         if isinstance(patients, dict):
             result["analytical_intent"] = patients.get("analytical_intent")
             result["sql"]               = patients.get("sql")
-            result["patients"]          = patients.get("result", patients.get("patients", []))
+            # Preserve the intent flag for the UI display logic
+            p_res = patients.get("result", patients.get("patients", []))
+            if isinstance(p_res, (dict, list)) and "intent" not in (p_res if isinstance(p_res, dict) else {}):
+                if isinstance(p_res, dict):
+                    p_res["intent"] = "aggregation"
+            result["patients"]          = p_res
         else:
             result["patients"]          = patients
 

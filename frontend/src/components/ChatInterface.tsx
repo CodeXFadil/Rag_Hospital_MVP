@@ -175,9 +175,9 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
           ``,
           `# Results Information`,
           `Patients matched  : ${
-            data.patients?.intent === "aggregation" 
-              ? (typeof data.patients.result === "object" ? "Cohort Found" : data.patients.result)
-              : (Array.isArray(data.patients) ? data.patients.length : 0)
+            Array.isArray(data.patients) 
+              ? data.patients.length 
+              : (data.patients?.intent === "aggregation" || data.patients?.avg_age || data.patients?.count_patients ? "Cohort Found" : 0)
           }`,
           `Timings (s)       : router=${timings.router_llm ?? "-"} | db=${timings.structured_retrieval ?? "-"} | llm=${timings.synthesis_llm ?? "-"} | total=${timings.total ?? "-"}`,
         ].join("\n");
