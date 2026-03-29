@@ -152,20 +152,21 @@ def _build_prompt(
 
         if isinstance(patients, list):
             matched_count = len(patients)
-        elif isinstance(patients, dict) and "result" in patients:
-            res = patients["result"]
-            # Multi-metric handling: Extract first count found
-            if isinstance(res, dict):
-                # Search for any value that looks like a count OR use the first metric found
-                matched_count = next((v for k, v in res.items() if "count" in k), 0)
-                if matched_count == 0 and res:
-                    # If it's an aggregation like 'avg_age', we know at least some patients matched.
-                    # Use a descriptive string to signal to the LLM that data IS available.
-                    matched_count = f"Census matching cohorts found ({len(res)} metrics)"
-            elif isinstance(res, list):
-                matched_count = sum(item["metrics"].get("count_patients", 0) for item in res if "metrics" in item)
+        elif isinstance(patients, dict):
+            # If it's the full intent wrapper
+            if "result" in patients:
+                res = patients["result"]
+                if isinstance(res, dict):
+                    matched_count = next((v for k, v in res.items() if "count" in k), 0)
+                elif isinstance(res, list):
+                    matched_count = sum(item["metrics"].get("count_patients", 0) for item in res if "metrics" in item)
+                else:
+                    matched_count = res
             else:
-                matched_count = res
+                # If it's a direct metric dict (e.g. {'count_patient_id': 123})
+                matched_count = next((v for k, v in patients.items() if "count" in k), 0)
+                if matched_count == 0 and patients:
+                    matched_count = f"Census matching cohorts found"
         else:
             matched_count = 0
 
@@ -179,8 +180,18 @@ def _build_prompt(
         pass
 
     # 2. Structured Patient Data / Analytics
-    if isinstance(patients, dict) and patients.get("intent") == "aggregation":
-        res_val = patients.get("result", "")
+    res_val = ""
+    is_agg = False
+    
+    if isinstance(patients, dict):
+        if patients.get("intent") == "aggregation":
+            res_val = patients.get("result", "")
+            is_agg = True
+        elif any(k.startswith("count") or k.startswith("avg") for k in patients.keys()):
+            res_val = patients
+            is_agg = True
+
+    if is_agg:
         if isinstance(res_val, list):
             # Format grouped results: Group: Metric1=Val, Metric2=Val
             lines = []
@@ -190,9 +201,14 @@ def _build_prompt(
             res_val = "\n".join(lines)
         elif isinstance(res_val, dict):
             # Format single summary: Metric1=Val, Metric2=Val
-            res_val = ", ".join([f"{k}={v}" for k, v in res_val.items()])
+            # Special case for count_patient_id -> Total Patients
+            formatted_metrics = []
+            for k, v in res_val.items():
+                label = k.replace("count_patient_id", "Total Patients Matched").replace("_", " ").title()
+                formatted_metrics.append(f"{label}: {v}")
+            res_val = ", ".join(formatted_metrics)
         
-        sections.append(f"=== POPULATION ANALYTICS ===\n{res_val}")
+        sections.append(f"=== POPULATION ANALYTICS (USE THESE NUMBERS) ===\n{res_val}")
     elif isinstance(patients, list) and patients:
         # Check if this is a list of actual patient records or group aggregation results
         is_actual_patient_list = isinstance(patients[0], dict) and "patient_id" in patients[0]
@@ -337,13 +353,16 @@ def process_query(query: str) -> dict:
             result["analytical_intent"] = resolved.get("analytical_intent")
             result["sql"]               = resolved.get("sql")
             
-            # The structure from _resolve_patients for INTENT_ANALYTICS is:
-            # {"intent": "aggregation", "result": ..., "sql": ...}
-            # BUT if route_intent returns {"aggregation": {"result": ...}}, it might be double wrapped.
             p_res = resolved.get("result", [])
+            # Handle potential double-wrapping from route_intent
             if isinstance(p_res, dict) and "aggregation" in p_res:
                 p_res = p_res["aggregation"].get("result", [])
             
+            # If resolved is a direct aggregation result (e.g. {'count_patient_id': 123})
+            # and not the full metadata wrapper, treat it as patients
+            if not p_res and "intent" not in resolved and any(k.endswith("_id") or k.startswith("count") or k.startswith("avg") for k in resolved.keys()):
+                 p_res = resolved
+
             result["patients"] = p_res
         else:
             result["patients"] = resolved
@@ -410,6 +429,11 @@ def process_query(query: str) -> dict:
             notes=notes,
             risk_flags=result["risk_flags"],
         )
+
+        # DEBUG: Print the analytics section of the prompt
+        if "=== POPULATION ANALYTICS ===" in system_prompt:
+             parts = system_prompt.split("=== POPULATION ANALYTICS ===")
+             print(f"\n[DEBUG] ANALYTICS SENT TO LLM:\n{parts[1][:200]}...")
 
         client   = _get_llm_client()
         response = client.chat.completions.create(

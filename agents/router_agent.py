@@ -108,10 +108,33 @@ def classify_intent(query: str) -> Dict:
                 final_intent = v
                 break
 
-        # 3. Extract entities
-        entities = data.get("entities", {})
-        if not isinstance(entities, dict):
-            entities = {}
+        # 3. Extract entities with cleaning
+        raw_entities = data.get("entities", {})
+        if not isinstance(raw_entities, dict):
+            raw_entities = {}
+        
+        entities = {}
+        for k, v in raw_entities.items():
+            if v is not None:
+                if isinstance(v, dict):
+                    entities[k] = v
+                else:
+                    val = str(v).strip()
+                    # Clinical Normalization
+                    if k == "primary_diagnosis":
+                        low_val = val.lower()
+                        if low_val in ["mi", "heart attack", "myocardial infarction", "myocardal infarction"]:
+                            val = "Myocardial Infarction"
+                    
+                    # Check for MI types specifically
+                    if "stemi" in str(val).lower():
+                        entities["mi_type"] = "STEMI"
+                        if k == "primary_diagnosis" and "infarction" not in val.lower():
+                            val = "Myocardial Infarction"
+
+                    entities[k] = val
+            else:
+                entities[k] = None
 
         return {
             "primary_intent":        final_intent,
