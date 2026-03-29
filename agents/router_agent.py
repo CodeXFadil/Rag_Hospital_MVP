@@ -52,21 +52,15 @@ SYSTEM_PROMPT = (
     "    - 'patient_lookup': for identifying a patient by ID or Name."
 )
 
-SCHEMA_PROMPT = """Return JSON with null for any field not present in the query:
-{{
-  "primary_intent": "one of: [patient_lookup, patient_summary, clinical_notes, population_query, analytics_query]",
-  "entities": {{
-    "patient_id": null,
-    "patient_name": null,
-    "primary_diagnosis": null,
-    "mi_type": null,
-    "icu_admission": null,
-    "age_range": {{"min": null, "max": null}},
-    "gender": null,
-    "outcome": null,
-    "admission_year": null
-  }}
-}}
+SCHEMA_PROMPT = """Return JSON with null for any field not present in the query.
+Fields: [patient_id, patient_name, primary_diagnosis, mi_type, icu_admission, age_range, gender, outcome, admission_year]
+
+Examples:
+- "STEMI patients": {{"entities": {{"primary_diagnosis": "Myocardial Infarction", "mi_type": "STEMI"}}}}
+- "How many in ICU": {{"entities": {{"icu_admission": "Yes"}}}}
+- "Death cases": {{"entities": {{"outcome": "Died"}}}}
+- "Over 65 years": {{"entities": {{"age_range": {{"min": 65}}}}}}
+
 Query: {query}"""
 
 # ── LLM Client ──────────────────────────────────────────────────────────────────

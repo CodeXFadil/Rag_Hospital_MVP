@@ -153,28 +153,32 @@ def _build_prompt(
         if isinstance(patients, list):
             matched_count = len(patients)
         elif isinstance(patients, dict):
-            # If it's the full intent wrapper
+            # If it's the full intent wrapper from run_query
             if "result" in patients:
                 res = patients["result"]
                 if isinstance(res, dict):
-                    matched_count = next((v for k, v in res.items() if "count" in k), 0)
+                    # Extract the first numeric value (likely the count)
+                    matched_count = next((v for k, v in res.items() if isinstance(v, (int, float))), 0)
                 elif isinstance(res, list):
-                    matched_count = sum(item["metrics"].get("count_patients", 0) for item in res if "metrics" in item)
+                    # Aggregate group counts
+                    matched_count = sum(item["metrics"].get("count_patient_id", item["metrics"].get("count_patients", 0)) for item in res if "metrics" in item)
                 else:
                     matched_count = res
             else:
-                # If it's a direct metric dict (e.g. {'count_patient_id': 123})
-                matched_count = next((v for k, v in patients.items() if "count" in k), 0)
-                if matched_count == 0 and patients:
-                    matched_count = f"Census matching cohorts found"
-        else:
-            matched_count = 0
+                # Direct metric dict
+                matched_count = next((v for k, v in patients.items() if isinstance(v, (int, float))), 0)
+
+        # 1b. Extra Metadata: Filters Applied
+        filter_summary = "None"
+        if isinstance(patients, dict) and "metadata" in patients:
+            filter_summary = patients["metadata"].get("filters_applied", "None")
 
         sections.append(
             f"=== DATABASE METADATA ===\n"
             f"Total Patients in Database: {total_count}\n"
             f"  - Gender Distribution (Estimated): Male: {male_count} | Female: {female_count}\n"
-            f"Note: Your query currently matches {matched_count} patients."
+            f"Note: Your query currently matches {matched_count} patients.\n"
+            f"Filters Applied: {filter_summary}"
         )
     except:
         pass

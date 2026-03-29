@@ -158,6 +158,17 @@ def normalize_intent(intent: Dict, query: str) -> Dict:
     
     # 0. Basic Normalization (Gender)
     g = str(filters.get("gender", "")).lower()
+
+    # 1. Check for explicit MI subtypes in the query text
+    if "stemi" in q_lower and "nstemi" not in q_lower:
+        filters["mi_type"] = "STEMI"
+    elif "nstemi" in q_lower:
+        filters["mi_type"] = "NSTEMI"
+    
+    # 2. Handle heart attack synonyms
+    if "heart attack" in q_lower or "infarction" in q_lower or " mi " in f" {q_lower} ":
+        if not filters.get("primary_diagnosis"):
+            filters["primary_diagnosis"] = "Myocardial Infarction"
     if "female" in g or g == "f": filters["gender"] = "F"
     elif "male" in g or g == "m":  filters["gender"] = "M"
 
@@ -184,19 +195,29 @@ def normalize_intent(intent: Dict, query: str) -> Dict:
             if "bmi_category" in rules:
                 filters["bmi_category"] = rules["bmi_category"]
 
-    # 1b. Clinical Boolean Normalization (ICU, etc)
-    icu = filters.get("icu_admission")
-    if icu is True or str(icu).lower() in ["yes", "1", "true"]:
+    # 1c. Risk factor and outcome keyword extraction
+    if "dm" in q_lower or "diabetes" in q_lower:
+        filters["risk_diabetes"] = "Yes"
+    if "smoker" in q_lower:
+        filters["risk_smoking"] = "Yes"
+    if "hypertension" in q_lower or " htn " in f" {q_lower} ":
+        filters["risk_hypertension"] = "Yes"
+    if "death" in q_lower or "fatal" in q_lower or "died" in q_lower:
+        filters["death_flag"] = 1
+    if "icu" in q_lower:
         filters["icu_admission"] = "Yes"
-    elif icu is False or str(icu).lower() in ["no", "0", "false"]:
-        filters["icu_admission"] = "No"
+    if "complications" in q_lower:
+        filters["complications"] = "Yes"
 
-
-    # 2. Normalize Lab Operators
-    lab_filters = filters.setdefault("lab_filters", [])
-    for lf in lab_filters:
-        if not lf.get("operator"):
-            lf["operator"] = ">" if "high" in q_lower else "<" if "low" in q_lower else "="
+    # 1d. Length of Stay extraction (e.g., "over 10 days")
+    import re
+    los_match = re.search(r"(?:over|more than|longer than|>)\s*(\d+)\s*days", q_lower)
+    if los_match:
+        filters["length_of_stay"] = {"min": int(los_match.group(1))}
+    else:
+        los_exact = re.search(r"exactly\s*(\d+)\s*days", q_lower)
+        if los_exact:
+            filters["length_of_stay"] = int(los_exact.group(1))
 
     # 3. Ensure intents is a list
     if "intent" in intent and "intents" not in intent:
@@ -235,6 +256,9 @@ def _empty_intent() -> Dict:
             "age_range": {}, "medications": [], "diagnoses": [], "lab_filters": [],
             "outcome": None, "admission_year": None,
             "nationality": None, "bmi_category": None, "procedure": None, "mi_type": None,
+            "icu_admission": None, "risk_smoking": None, "risk_hypertension": None, 
+            "risk_diabetes": None, "death_flag": None, "length_of_stay": None,
+            "complications": None
         },
         "aggregations": [],
         "extreme": {},
@@ -300,6 +324,13 @@ def _build_filtered_query(base_query, filters: Dict, joined: set):
         base_query = base_query.filter(Patient.admission_date.like(f"{year_str}-%"))
     
     # 4c. New Excel Fields
+    def _to_yes_no(val):
+        if val is None: return None
+        s = str(val).strip().lower()
+        if s in {"true", "1", "yes", "y", "t"}: return "Yes"
+        if s in {"false", "0", "no", "n", "f"}: return "No"
+        return val
+
     if filters.get("primary_diagnosis"):
         base_query = base_query.filter(Patient.primary_diagnosis.ilike(f"%{filters['primary_diagnosis'].strip()}%"))
     if filters.get("nationality"):
@@ -311,17 +342,31 @@ def _build_filtered_query(base_query, filters: Dict, joined: set):
     if i_type := filters.get("mi_type"):
         base_query = base_query.filter(Patient.mi_type.ilike(str(i_type).strip()))
     if icu := filters.get("icu_admission"):
-        base_query = base_query.filter(Patient.icu_admission.ilike(str(icu).strip()))
+        base_query = base_query.filter(Patient.icu_admission.ilike(_to_yes_no(icu)))
     if (d_flag := filters.get("death_flag")) is not None:
         base_query = base_query.filter(Patient.death_flag == int(d_flag))
+    if comp := filters.get("complications"):
+        base_query = base_query.filter(Patient.complications.ilike(_to_yes_no(comp)))
     
-    # 4d. Risk Factors
+    # 4d. Length of Stay
+    los = filters.get("length_of_stay")
+    if isinstance(los, dict):
+        if los.get("min") is not None:
+            base_query = base_query.filter(Patient.length_of_stay >= int(los["min"]))
+        if los.get("max") is not None:
+            base_query = base_query.filter(Patient.length_of_stay <= int(los["max"]))
+    elif los is not None:
+        try:
+            base_query = base_query.filter(Patient.length_of_stay == int(los))
+        except: pass
+
+    # 4e. Risk Factors
     if r_smoke := filters.get("risk_smoking"):
-        base_query = base_query.filter(Patient.risk_smoking.ilike(str(r_smoke).strip()))
+        base_query = base_query.filter(Patient.risk_smoking.ilike(_to_yes_no(r_smoke)))
     if r_hyper := filters.get("risk_hypertension"):
-        base_query = base_query.filter(Patient.risk_hypertension.ilike(str(r_hyper).strip()))
+        base_query = base_query.filter(Patient.risk_hypertension.ilike(_to_yes_no(r_hyper)))
     if r_diabetes := filters.get("risk_diabetes"):
-        base_query = base_query.filter(Patient.risk_diabetes.ilike(str(r_diabetes).strip()))
+        base_query = base_query.filter(Patient.risk_diabetes.ilike(_to_yes_no(r_diabetes)))
 
 
     # 5. Lab filters removed (No labs table)
@@ -367,6 +412,13 @@ def aggregate_patients(intent: Dict, session: Session = None) -> Dict:
             if gb == "gender":       group_col = Patient.gender
             elif gb == "age":        group_col = Patient.age
             elif gb == "outcome":    group_col = Patient.outcome
+            elif gb == "nationality": group_col = Patient.nationality
+            elif gb == "mi_type":     group_col = Patient.mi_type
+            elif gb == "bmi_category": group_col = Patient.bmi_category
+            elif gb in ["length_of_stay", "los"]: group_col = Patient.length_of_stay
+            elif gb == "complications": group_col = Patient.complications
+            elif gb == "icu_admission": group_col = Patient.icu_admission
+            elif gb == "admission_year": group_col = func.substr(Patient.admission_date, 1, 4)
             elif gb == "nationality": group_col = Patient.nationality
             elif gb == "bmi_category":group_col = Patient.bmi_category
             elif gb == "procedure":   group_col = Patient.procedure
@@ -570,7 +622,8 @@ def run_query(query: str) -> Dict:
     Parse a natural language query, route it, and return the result.
     Single entry point for external callers.
     """
-    intent_json = parse_query_to_intent(query)
+    from agents.router_agent import classify_intent
+    intent_json = classify_intent(query)
     result      = route_intent(intent_json)
     result["parsed_intent"] = intent_json
     return result
