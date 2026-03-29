@@ -26,8 +26,6 @@ except ImportError:
 from agents.router_agent import (
     classify_intent,
     INTENT_PATIENT_LOOKUP,
-    INTENT_MEDICATION,
-    INTENT_LAB,
     INTENT_SUMMARY,
     INTENT_NOTES,
     INTENT_POPULATION,
@@ -76,20 +74,17 @@ def _resolve_patients(intent_data: Dict, query: str) -> list:
     # always return ALL patients so the LLM can count/group them correctly.
     has_patient_id   = bool(entities.get("patient_id"))
     has_patient_name = bool(entities.get("patient_name"))
-    has_lab_filter   = bool(entities.get("lab_filters"))
-    has_meds_filter  = bool(entities.get("medications"))
+    has_primary_diag = bool(entities.get("primary_diagnosis"))
     has_gender_filter = (entities.get("gender") or "").strip().lower() in {"male", "female"}
     age_range = entities.get("age_range", {}) or {}
     has_age_filter = (age_range.get("min") is not None) or (age_range.get("max") is not None)
-    has_diagnosis_filter = bool(entities.get("diagnoses"))
     has_outcome_filter   = bool(entities.get("outcome"))
     has_year_filter      = bool(entities.get("admission_year"))
 
     is_population = (intent == INTENT_POPULATION)
     has_narrow_filter = (
-        has_patient_id or has_patient_name or has_lab_filter or 
-        has_meds_filter or has_gender_filter or has_age_filter or 
-        has_diagnosis_filter or has_outcome_filter or has_year_filter
+        has_patient_id or has_patient_name or has_primary_diag or 
+        has_gender_filter or has_age_filter or has_outcome_filter or has_year_filter
     )
 
     if intent == INTENT_ANALYTICS:
@@ -123,8 +118,7 @@ def _resolve_patients(intent_data: Dict, query: str) -> list:
 
 def _should_call_notes_agent(intent: str) -> bool:
     """Return True for intents that benefit from semantic note retrieval."""
-    # Almost all clinical queries benefit from checking doctor notes for context
-    return intent in {INTENT_NOTES, INTENT_SUMMARY, INTENT_MEDICATION, INTENT_LAB}
+    return intent in {INTENT_NOTES, INTENT_SUMMARY}
 
 
 # ── Prompt builder ──────────────────────────────────────────────────────────────
@@ -200,25 +194,39 @@ def _build_prompt(
         
         sections.append(f"=== POPULATION ANALYTICS ===\n{res_val}")
     elif isinstance(patients, list) and patients:
-        # STRICT CAP: Never pass more than 100 patients to LLM context
-        context_cap = min(100, len(patients))
-        patient_ctx = []
-        for p in patients[:context_cap]:
-            patient_ctx.append(
-                f"ID: {p['patient_id']} | {p['name']} | Age: {p['age']} | Gender: {p['gender']}\n"
-                f"Diagnosis: {p.get('primary_diagnosis', p.get('diagnoses', 'Unknown'))}"
-            )
-        label = f"=== SAMPLE PATIENT DATA (Showing {context_cap} of {len(patients)}) ==="
-        sections.append(label + "\n" + "\n".join(patient_ctx))
+        # Check if this is a list of actual patient records or group aggregation results
+        is_actual_patient_list = isinstance(patients[0], dict) and "patient_id" in patients[0]
+        
+        if is_actual_patient_list:
+            # STRICT CAP: Never pass more than 100 patients to LLM context
+            context_cap = min(100, len(patients))
+            patient_ctx = []
+            for p in patients[:context_cap]:
+                patient_ctx.append(
+                    f"ID: {p['patient_id']} | {p['name']} | Age: {p['age']} | Gender: {p['gender']}\n"
+                    f"Diagnosis: {p.get('primary_diagnosis', p.get('diagnoses', 'Unknown'))}"
+                )
+            label = f"=== SAMPLE PATIENT DATA (Showing {context_cap} of {len(patients)}) ==="
+            sections.append(label + "\n" + "\n".join(patient_ctx))
+        else:
+            # Grouped results from run_query (fallback formatting)
+            lines = []
+            for item in patients:
+                if isinstance(item, dict) and "group" in item:
+                    m_str = ", ".join([f"{k}={v}" for k, v in item.get('metrics', {}).items()])
+                    lines.append(f"- {item['group']}: {m_str}")
+            if lines:
+                sections.append("=== GROUPED ANALYTICS ===\n" + "\n".join(lines))
 
 
     # 3. Retrieved Clinical Notes
     if notes:
         notes_ctx = [
-            f"[{n['patient_id']} - {n['name']}] {n['text']}"
-            for n in notes[:4]
+            f"[{n.get('patient_id', 'UNK')} - {n.get('name', 'Unknown')}] {n['text']}"
+            for n in notes[:4] if isinstance(n, dict) and "text" in n
         ]
-        sections.append("=== RETRIEVED CLINICAL NOTES ===\n" + "\n\n".join(notes_ctx))
+        if notes_ctx:
+            sections.append("=== RETRIEVED CLINICAL NOTES ===\n" + "\n\n".join(notes_ctx))
 
     # 4. Clinical Risk Flags (Deduplicated & Conditional)
     # Logic to decide if Risk Indicators should be shown
@@ -251,21 +259,13 @@ def _build_prompt(
         "but for simple questions (like counts or lists), BE DIRECT and concise."
     )
 
-    if intent == INTENT_MEDICATION:
-        intent_instructions = "Focus specifically on the patient's medications, dosages, and any mentions of drug effectiveness or side effects in the notes."
-    elif intent == INTENT_LAB:
-        intent_instructions = "Focus on the specific lab values, ranges, and any clinical flags related to these metrics."
-    elif intent == INTENT_PATIENT_LOOKUP:
-        intent_instructions = "Provide the basic identification details and current status of the patient."
-    elif intent == INTENT_SUMMARY:
-        intent_instructions = "Provide a comprehensive overview based on structured data and notes."
+    if intent in {INTENT_SUMMARY, INTENT_PATIENT_LOOKUP}:
+        intent_instructions = "Provide a comprehensive overview based on structured data and notes, including history and medications."
         format_instructions = (
             "Structure your response with these sections:\n"
             "1. Patient Overview\n"
-            "2. Current Medications\n"
-            "3. Recent Lab Results\n"
-            "4. Clinical Notes Summary\n"
-            "5. Risk Indicators"
+            "2. Clinical History & Status\n"
+            "3. Risk Indicators"
         )
     elif intent == INTENT_POPULATION:
         intent_instructions = (
@@ -329,32 +329,37 @@ def process_query(query: str) -> dict:
 
         # ── Step 2a: Structured retrieval ──────────────────────────────
         t1 = time.time()
-        patients = _resolve_patients(intent_data, query)
+        resolved = _resolve_patients(intent_data, query)
         result["timings"]["structured_retrieval"] = round(time.time() - t1, 3)
         
-        # If patients is a dict, it contains metadata (from Analytics or Filtered structured lookups)
-        if isinstance(patients, dict):
-            result["analytical_intent"] = patients.get("analytical_intent")
-            result["sql"]               = patients.get("sql")
-            # Preserve the intent flag for the UI display logic
-            p_res = patients.get("result", patients.get("patients", []))
-            if isinstance(p_res, (dict, list)) and "intent" not in (p_res if isinstance(p_res, dict) else {}):
-                if isinstance(p_res, dict):
-                    p_res["intent"] = "aggregation"
-            result["patients"]          = p_res
+        if isinstance(resolved, dict):
+            # Aggregation or multi-intent metadata
+            result["analytical_intent"] = resolved.get("analytical_intent")
+            result["sql"]               = resolved.get("sql")
+            
+            # The structure from _resolve_patients for INTENT_ANALYTICS is:
+            # {"intent": "aggregation", "result": ..., "sql": ...}
+            # BUT if route_intent returns {"aggregation": {"result": ...}}, it might be double wrapped.
+            p_res = resolved.get("result", [])
+            if isinstance(p_res, dict) and "aggregation" in p_res:
+                p_res = p_res["aggregation"].get("result", [])
+            
+            result["patients"] = p_res
         else:
-            result["patients"]          = patients
+            result["patients"] = resolved
 
         # ── Step 2b: Semantic retrieval ────────────────────────────────
         t2 = time.time()
         notes = []
-        # Fallback to global notes only if NOT a population-level query
-        # This prevents "noise" in population queries while allowing specific 
-        # patient semantic lookups to work even if the ID is slightly off.
         allow_global_fallback = (intent != INTENT_POPULATION)
         
-        if _should_call_notes_agent(intent) or (not patients and allow_global_fallback):
-            note_pid = patients[0]["patient_id"] if len(patients) == 1 else None
+        # Safe access for patient list (ensure we have dicts with patient_id)
+        patients_list = []
+        if isinstance(result["patients"], list):
+            patients_list = [p for p in result["patients"] if isinstance(p, dict) and "patient_id" in p]
+        
+        if _should_call_notes_agent(intent) or (not patients_list and allow_global_fallback):
+            note_pid = patients_list[0]["patient_id"] if len(patients_list) == 1 else None
             notes = get_relevant_notes(query=query, patient_id=note_pid, top_k=4)
         result["timings"]["vector_search"] = round(time.time() - t2, 3)
         result["notes"] = notes
@@ -370,13 +375,23 @@ def process_query(query: str) -> dict:
         )
 
         risk_flags = []
-        if isinstance(patients, list) and patients and should_run_rules:
-            if len(patients) == 1:
-                risk_flags = analyse_patient(patients[0])
+        patient_data_for_rules = result["patients"]
+        
+        # Check if we have actual patient records (list of dicts with 'patient_id')
+        is_patient_list = (
+            isinstance(patient_data_for_rules, list) 
+            and len(patient_data_for_rules) > 0 
+            and isinstance(patient_data_for_rules[0], dict) 
+            and "patient_id" in patient_data_for_rules[0]
+        )
+
+        if is_patient_list and should_run_rules:
+            if len(patient_data_for_rules) == 1:
+                risk_flags = analyse_patient(patient_data_for_rules[0])
                 for f in risk_flags:
-                    f["patient_id"] = patients[0]["patient_id"]
+                    f["patient_id"] = patient_data_for_rules[0]["patient_id"]
             else:
-                for p in analyse_multiple_patients(patients):
+                for p in analyse_multiple_patients(patient_data_for_rules):
                     p_flags = p.get("risk_flags", [])
                     for pf in p_flags:
                         pf["patient_id"] = p["patient_id"]
@@ -391,7 +406,7 @@ def process_query(query: str) -> dict:
         system_prompt, user_message = _build_prompt(
             query=query,
             intent=intent,
-            patients=patients,
+            patients=result["patients"],
             notes=notes,
             risk_flags=result["risk_flags"],
         )

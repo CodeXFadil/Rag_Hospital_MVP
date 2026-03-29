@@ -1,14 +1,10 @@
 """
 agents/notes_agent.py
-Retrieves relevant clinical notes from ChromaDB using semantic search.
+Retrieves relevant clinical notes. 
+Stubbed for now as the 'rag' module is missing in this workspace.
 """
 
-import sys, os
 from typing import Optional, List, Dict
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-# from rag.retriever import retrieve - moved inside function
-
 
 def get_relevant_notes(
     query: str,
@@ -17,18 +13,7 @@ def get_relevant_notes(
 ) -> List[Dict]:
     """
     Fetch semantically relevant clinical note chunks for the query.
-
-    Args:
-        query: User's natural language query.
-        patient_id: If provided, filter to this patient's notes.
-        top_k: Number of note chunks to return.
-
-    Returns:
-        List of dicts: {text, patient_id, name, score}
+    STUBBED: Returns empty list as RAG module is unlocated.
     """
-    try:
-        from rag.retriever import retrieve
-        results = retrieve(query=query, patient_id=patient_id, top_k=top_k)
-        return results
-    except RuntimeError as e:
-        return [{"text": str(e), "patient_id": "", "name": "", "score": 0.0}]
+    # TODO: Restore RAG retriever logic once located
+    return []

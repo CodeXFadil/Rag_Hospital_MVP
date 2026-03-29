@@ -53,41 +53,6 @@ class Patient(Base):
     doctor_notes  = Column(Text)
     visit_history = Column(Text)
 
-    medications = relationship("Medication", back_populates="patient", cascade="all, delete-orphan")
-    diagnoses   = relationship("Diagnosis",  back_populates="patient", cascade="all, delete-orphan")
-    lab_results = relationship("LabResult",  back_populates="patient", cascade="all, delete-orphan")
-
-
-
-class Medication(Base):
-    __tablename__ = "medications"
-    id         = Column(Integer, primary_key=True, index=True)
-    patient_id = Column(String, ForeignKey("patients.patient_id"), index=True)
-    med_name   = Column(String, index=True)
-
-    patient = relationship("Patient", back_populates="medications")
-
-
-class Diagnosis(Base):
-    __tablename__ = "diagnoses"
-    id             = Column(Integer, primary_key=True, index=True)
-    patient_id     = Column(String, ForeignKey("patients.patient_id"), index=True)
-    diagnosis_name = Column(String, index=True)
-
-    patient = relationship("Patient", back_populates="diagnoses")
-
-
-class LabResult(Base):
-    __tablename__ = "labs"
-    id         = Column(Integer, primary_key=True, index=True)
-    patient_id = Column(String, ForeignKey("patients.patient_id"), index=True)
-    marker     = Column(String, index=True)
-    value      = Column(Float, index=True)
-    unit       = Column(String)
-    test_date  = Column(String, index=True)
-
-    patient = relationship("Patient", back_populates="lab_results")
-
 
 # ── Session Helper ──────────────────────────────────────────────────────────────
 

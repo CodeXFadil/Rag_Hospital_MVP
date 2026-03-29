@@ -103,7 +103,7 @@ def analyse_patient(patient_data: Dict) -> List[Dict]:
     Returns:
         List of risk flag dicts: {flag, detail, marker, value}
     """
-    lab_str = str(patient_data.get("lab_results", ""))
+    lab_str = str(patient_data.get("doctor_notes", ""))
     flags = []
     seen_rules = set()
 

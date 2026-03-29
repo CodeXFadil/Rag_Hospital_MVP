@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 # Add project root to sys.path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from data.database import Base, Patient, Medication, Diagnosis, LabResult, engine
+from data.database import Base, Patient, engine
 
 def migrate():
     # 1. Reset Database
@@ -71,11 +71,7 @@ def migrate():
         )
         patients_to_add.append(p)
         
-        # Also populate relational table for clinical reasoning joins
-        if p.primary_diagnosis:
-            db.add(Diagnosis(patient_id=p.patient_id, diagnosis_name=p.primary_diagnosis))
-        if p.mi_type:
-            db.add(Diagnosis(patient_id=p.patient_id, diagnosis_name=p.mi_type))
+        patients_to_add.append(p)
         
         # Batch commit for speed
         if len(patients_to_add) >= 500:

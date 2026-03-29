@@ -23,12 +23,11 @@ from dotenv import load_dotenv
 
 from data.database import (
     get_db_session,
-    Patient, Medication, Diagnosis, LabResult,
+    Patient,
 )
 from agents.patient_data_agent import (
     filter_patients,
     find_patient,
-    find_extreme_lab_cases,
     serialize_patient,
 )
 
@@ -59,18 +58,16 @@ DERIVED_RULES = {
 
 
 INTENT_SCHEMA = {
-    "intents": ["filter", "aggregation", "extreme", "lookup"], # List of active intents
+    "intents": ["filter", "aggregation", "extreme", "lookup"], 
     "filters": {
         "patient_id":   None,
         "patient_name": None,
         "gender":       None,
         "age_range":    {"min": None, "max": None},
-        "medications":  [],
-        "diagnoses":    [],
-        "primary_diagnosis": None,  # For exact matching on primary label
+        "primary_diagnosis": None,  
         "mi_type":      None,        # STEMI | NSTEMI
         "icu_admission": None,       # Yes | No
-        "outcome":      None,        # Discharged | Deceased | etc.
+        "outcome":      None,        # Discharged | Deceased
         "death_flag":   None,        # 1 (Deceased) | 0 (Discharged)
         "admission_year": None,
         "nationality":  None,
@@ -79,35 +76,28 @@ INTENT_SCHEMA = {
         "risk_smoking": None,
         "risk_hypertension": None,
         "risk_diabetes": None,
-        "lab_filters":  [
-            {"marker": None, "operator": "> | < | >= | <= | = | !=", "value": None}
-        ],
     },
     "aggregations": [
         {
             "type":     "count | avg | sum | min | max",
-            "field":    "age | lab_value | length_of_stay | death_flag",
-            "group_by": "gender | age | outcome | year | nationality | bmi_category | procedure | mi_type | medication | diagnosis | primary_diagnosis | icu_admission",
+            "field":    "age | length_of_stay | death_flag",
+            "group_by": "gender | age | outcome | year | nationality | bmi_category | procedure | mi_type | primary_diagnosis | icu_admission",
         }
     ],
     "extreme": {
         "type":  "top | bottom",
-        "field": "lab_value",
-        "marker": None,
+        "field": "age | length_of_stay",
         "top_n": 5,
     },
 }
 
 _SYSTEM_PROMPT = (
+    "You are a Clinical Data Assistant. The dataset is a SINGLE TABLE called 'patients'.\n"
     "- Identify ALL intents: filter, aggregation, extreme, or lookup\n"
-    "- For analytical questions (e.g., 'How many X...'), include BOTH 'filter' and 'aggregation' intents.\n"
-    "- Use 'primary_diagnosis' for main diagnoses mentioned by the user.\n"
-    "- Use 'death_flag' for mortality queries (avg of death_flag = mortality rate).\n"
-    "- Use 'mi_type' to distinguish between STEMI and NSTEMI cases.\n"
-    "- Extract filters (age, gender, medications, diagnosis, lab markers, risk factors) into the 'filters' object.\n"
-    "- Support multiple aggregations in the 'aggregations' list. EACH aggregation must use the shared 'filters'.\n"
-    "- Standardise lab marker names to: HbA1c, BP, LDL, eGFR, Glucose, Cholesterol\n"
-    "- Only return valid JSON. No explanations.\n"
+    "- All clinical data (diagnoses, procedures, risk factors) are columns in the 'patients' table.\n"
+    "- Use 'primary_diagnosis' for main clinical conditions.\n"
+    "- Use 'death_flag' for mortality (avg = rate).\n"
+    "- Only return valid JSON.\n"
     f"Schema:\n{json.dumps(INTENT_SCHEMA, indent=2)}"
 )
 
@@ -254,22 +244,8 @@ def _empty_intent() -> Dict:
 # ── Shared Filter Builder (no duplicate joins, no raw SQL) ──────────────────────
 
 def _get_required_joins(filters: Dict, aggregations: List[Dict]) -> set:
-    """Determine which tables must be joined based on filters AND analytical metrics."""
-    joins = set()
-    
-    # 1. From filters
-    if filters.get("medications"): joins.add("medications")
-    if filters.get("diagnoses"): joins.add("diagnoses")
-    if filters.get("lab_filters"): joins.add("labs")
-    
-    # 2. From aggregations
-    for agg in aggregations:
-        if agg.get("field") == "lab_value": joins.add("labs")
-        gb = str(agg.get("group_by", "")).lower()
-        if gb == "medication": joins.add("medications")
-        if gb == "diagnosis": joins.add("diagnoses")
-        
-    return joins
+    """Determine which tables must be joined. Now always empty for single-table."""
+    return set()
 
 
 def _build_filtered_query(base_query, filters: Dict, joined: set):
@@ -348,54 +324,8 @@ def _build_filtered_query(base_query, filters: Dict, joined: set):
         base_query = base_query.filter(Patient.risk_diabetes.ilike(str(r_diabetes).strip()))
 
 
-    # 5. Medications — join once only
-    meds = [m for m in (filters.get("medications") or []) if m]
-    if meds:
-        if "medications" not in joined:
-            base_query = base_query.join(Medication, Patient.patient_id == Medication.patient_id)
-            joined.add("medications")
-        for med in meds:
-            base_query = base_query.filter(Medication.med_name.ilike(f"%{med}%"))
-
-    # 6. Diagnoses — join once only
-    diagnoses = [d for d in (filters.get("diagnoses") or []) if d]
-    if diagnoses:
-        if "diagnoses" not in joined:
-            base_query = base_query.join(Diagnosis, Patient.patient_id == Diagnosis.patient_id)
-            joined.add("diagnoses")
-        for diag in diagnoses:
-            base_query = base_query.filter(Diagnosis.diagnosis_name.ilike(f"%{diag}%"))
-
-    # 7. Lab filters — join once only, then chain .filter() per rule
-    lab_filters = filters.get("lab_filters") or []
-    valid_ops = {">", ">=", "<", "<=", "=", "==", "!="}
-    for lf in lab_filters:
-        marker = lf.get("marker")
-        op     = lf.get("operator", "")
-        value  = lf.get("value")
-        if not marker or op not in valid_ops or value is None:
-            continue
-        try:
-            value = float(value)
-        except (TypeError, ValueError):
-            continue
-
-        if "labs" not in joined:
-            base_query = base_query.join(LabResult, Patient.patient_id == LabResult.patient_id)
-            joined.add("labs")
-
-        base_query = base_query.filter(LabResult.marker.ilike(marker))
-
-        op_map = {
-            ">":  LabResult.value.__gt__,
-            ">=": LabResult.value.__ge__,
-            "<":  LabResult.value.__lt__,
-            "<=": LabResult.value.__le__,
-            "=":  LabResult.value.__eq__,
-            "==": LabResult.value.__eq__,
-            "!=": LabResult.value.__ne__,
-        }
-        base_query = base_query.filter(op_map[op](value))
+    # 5. Lab filters removed (No labs table)
+    # 6. Medications/Diagnoses are handled as direct clinical columns in Patient
 
     return base_query
 

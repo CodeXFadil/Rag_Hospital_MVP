@@ -1,6 +1,7 @@
 """
 agents/router_agent.py
 LLM-based structured query parser using OpenRouter.
+Simplified for Single-Table (Patients) architecture.
 """
 
 import os
@@ -16,8 +17,6 @@ load_dotenv()
 
 # ── Intent category constants ───────────────────────────────────────────────────
 INTENT_PATIENT_LOOKUP   = "patient_lookup"
-INTENT_MEDICATION       = "medication_query"
-INTENT_LAB              = "lab_query"
 INTENT_SUMMARY          = "patient_summary"
 INTENT_NOTES            = "clinical_notes"
 INTENT_POPULATION       = "population_query"
@@ -25,9 +24,14 @@ INTENT_ANALYTICS        = "analytics_query"
 FALLBACK_INTENT         = INTENT_SUMMARY
 
 VALID_INTENTS = {
-    INTENT_PATIENT_LOOKUP, INTENT_MEDICATION, INTENT_LAB,
-    INTENT_SUMMARY, INTENT_NOTES, INTENT_POPULATION, INTENT_ANALYTICS
+    INTENT_PATIENT_LOOKUP, INTENT_SUMMARY, INTENT_NOTES, 
+    INTENT_POPULATION, INTENT_ANALYTICS
 }
+
+# Mapping old intents to new ones for backward compatibility in the coordinator if needed
+# (Though we are cleaning the coordinator next)
+INTENT_MEDICATION = INTENT_SUMMARY
+INTENT_LAB        = INTENT_SUMMARY
 
 OPENROUTER_API_KEY  = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -36,36 +40,27 @@ DEFAULT_MODEL       = os.getenv("LLM_MODEL", "openai/gpt-4o-mini")
 # ── Prompts ─────────────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = (
-    "You are a clinical query parser. Extract criteria into structured JSON.\n"
-    "Always return valid JSON. Standardize lab markers to: HbA1c, BP, LDL, eGFR, Glucose.\n\n"
-    "OUTPUT RULES — follow these exactly:\n"
-    "1. Output null for ANY field not explicitly stated in the query. Never invent values.\n"
-    "2. 'gender' must be exactly 'male', 'female', or null. NEVER output combined values like 'male|female' or 'both'.\n"
-    "3. 'age_range': only set min/max when the query states a specific age bound. Otherwise output null for each.\n"
-    "4. 'patient_id': only set when the query contains an ID like P001, P023, etc. Otherwise null.\n"
-    "5. 'patient_name': only set when a specific person's name is mentioned. Otherwise null.\n"
-    "6. 'lab_filters': only populate when query mentions a specific lab marker + threshold. Otherwise empty [].\n"
-    "7. 'medications': only populate when a specific drug name is mentioned. Otherwise empty [].\n"
-    "8. 'diagnoses': only populate when a specific disease or condition (like diabetes, hypertension, asthma) is mentioned. Otherwise empty [].\n"
-    "9. 'outcome': only populate if the query asks for deaths, survival, deceased, or discharged patients (e.g. exactly 'Deceased' or 'Discharged'). Otherwise null.\n"
-    "10. 'admission_year': only populate if a specific year (e.g. 2021) is mentioned. Otherwise null.\n"
-    "11. 'primary_intent' rules:\n"
-    "    - Use 'analytics_query' if the user asks for a 'distribution', 'trends', 'by year', 'by outcome', 'average', 'mean', 'count by', or 'group by'.\n"
-    "    - CRITICAL: If the user asks for 'average age' or 'how many patients with X', this is ALWAYS an 'analytics_query', NOT a 'population_query'.\n"
-    "    - Use 'population_query' only for simple lists or finding many patients without statistical grouping.\n"
-    "    - Use 'patient_summary' for one person."
-
+    "You are a clinical query parser. Extract medical search criteria into structured JSON.\n"
+    "The entire dataset is in a SINGLE table. There are no separate medication or lab tables.\n\n"
+    "OUTPUT RULES:\n"
+    "1. Output null for ANY field not explicitly mentioned.\n"
+    "2. 'gender' must be 'male', 'female', or null.\n"
+    "3. 'primary_intent' rules:\n"
+    "    - 'analytics_query': for statistical questions (how many, average, mean, count by, group by).\n"
+    "    - 'patient_summary': for questions about a specific patient's clinical history, medications, or status.\n"
+    "    - 'population_query': for finding lists of patients matching criteria without statistics.\n"
+    "    - 'patient_lookup': for identifying a patient by ID or Name."
 )
 
 SCHEMA_PROMPT = """Return JSON with null for any field not present in the query:
 {{
-  "primary_intent": "one of: [patient_lookup, medication_query, lab_query, patient_summary, clinical_notes, population_query, analytics_query]",
+  "primary_intent": "one of: [patient_lookup, patient_summary, clinical_notes, population_query, analytics_query]",
   "entities": {{
     "patient_id": null,
     "patient_name": null,
-    "diagnoses": [],
-    "lab_filters": [{{"marker": null, "operator": "> | < | >= | <= | == | !=", "value": null}}],
-    "medications": [],
+    "primary_diagnosis": null,
+    "mi_type": null,
+    "icu_admission": null,
     "age_range": {{"min": null, "max": null}},
     "gender": null,
     "outcome": null,
@@ -95,7 +90,7 @@ def classify_intent(query: str) -> Dict:
         )
         data = json.loads(response.choices[0].message.content)
 
-        # 1. Clean keys recursively (strip whitespace and stray quotes)
+        # 1. Clean keys
         def clean_obj(obj):
             if isinstance(obj, dict):
                 return {k.strip().replace('"', '').replace("'", ""): clean_obj(v) for k, v in obj.items()}
@@ -117,14 +112,6 @@ def classify_intent(query: str) -> Dict:
         entities = data.get("entities", {})
         if not isinstance(entities, dict):
             entities = {}
-
-        # 4. Clean up empty lab_filters (remove entries where marker is null)
-        lab_filters = entities.get("lab_filters", [])
-        if isinstance(lab_filters, list):
-            entities["lab_filters"] = [
-                lf for lf in lab_filters
-                if isinstance(lf, dict) and lf.get("marker") and lf.get("value") is not None
-            ]
 
         return {
             "primary_intent":        final_intent,
