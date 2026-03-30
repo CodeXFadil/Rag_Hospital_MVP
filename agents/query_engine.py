@@ -413,6 +413,7 @@ def aggregate_patients(intent: Dict, session: Session = None) -> Dict:
     Refactored to support MULTIPLE aggregations in a single SQL query.
     Returns: {"result": {metric1: val, metric2: val}, "metadata": {...}}
     """
+    log_step("ENGINE: AGGREGATION START", intent)
     db = session or get_db_session()
     filters = intent.get("filters", {})
     aggs    = intent.get("aggregations", [])
@@ -549,6 +550,7 @@ def route_intent(intent_json: Dict) -> Dict:
     Updated for MULTI-INTENT compatibility.
     Sequentially processes filter, extreme, and aggregation.
     """
+    log_step("ENGINE: ROUTING INTENT", intent_json)
     intents = intent_json.get("intents", ["filter"])
     filters = intent_json.get("filters", {})
     extreme = intent_json.get("extreme", {})

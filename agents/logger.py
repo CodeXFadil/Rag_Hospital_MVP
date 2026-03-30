@@ -21,7 +21,7 @@ def log_step(step_name, data):
         f.write("\n")
     
     # Also print to console for real-time visibility
-    print(f"[LOG][{step_name}] {formatted_data[:100]}...", flush=True)
+    print(f"\n[DEBUG LOG: {step_name}]\n{formatted_data}\n", flush=True)
 
 def clear_logs():
     """Clears the log file."""
