@@ -143,6 +143,7 @@ def process_query(query: str) -> dict:
     Unified pipeline using query_engine.run_query for 100% structured retrieval.
     """
     import time
+    from .logger import log_step
     from agents.query_engine import run_query
     start_total = time.time()
     
@@ -155,6 +156,7 @@ def process_query(query: str) -> dict:
     }
 
     try:
+        log_step("COORDINATOR: RECEIVED QUERY", query)
         # 1. Unified Structured Engine (Parsing + Routing + Execution)
         t0 = time.time()
         engine_result = run_query(query)
@@ -173,6 +175,8 @@ def process_query(query: str) -> dict:
             result_data=result,
         )
 
+        log_step("COORDINATOR: SYNTHESIS PROMPT", {"system": system_prompt, "user": user_message})
+
         client   = _get_llm_client()
         response = client.chat.completions.create(
             model=DEFAULT_MODEL,
@@ -184,6 +188,7 @@ def process_query(query: str) -> dict:
             max_tokens=600
         )
         result["llm_response"] = response.choices[0].message.content
+        log_step("COORDINATOR: FINAL RESPONSE", result["llm_response"])
         result["timings"]["synthesis_llm"] = round(time.time() - t1, 3)
         
         result["timings"]["total"] = round(time.time() - start_total, 3)

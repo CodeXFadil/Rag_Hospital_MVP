@@ -58,11 +58,21 @@ def read_root():
 
 @app.get("/health")
 def health():
+    import os
+    log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_debug.log")
     return {
         "status": "ok", 
         "version": "1.0-lean",
-        "ready": True
+        "ready": True,
+        "logging_active": True,
+        "log_size_bytes": os.path.getsize(log_file) if os.path.exists(log_file) else 0
     }
+
+@app.post("/api/clear-logs")
+def clear_logs_endpoint():
+    from agents.logger import clear_logs
+    clear_logs()
+    return {"status": "logs cleared"}
 
 @app.post("/api/chat")
 async def chat_endpoint(request: QueryRequest):

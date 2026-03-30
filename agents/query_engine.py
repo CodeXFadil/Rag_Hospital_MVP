@@ -127,6 +127,7 @@ def parse_query_to_intent(query: str) -> Dict:
         # New Pipeline: Normalize then Validate
         normalized = normalize_intent(data, query)
         validated  = _validate_intent(normalized)
+        log_step("ENGINE: PARSED INTENT", validated)
         return compact_intent(validated)
 
     except Exception as e:
@@ -178,7 +179,6 @@ def normalize_intent(intent: Dict, query: str) -> Dict:
     elif "male" in g or g == "m":  filters["gender"] = "M"
 
     # 1. Apply Derived Rules
-
     for term, rules in DERIVED_RULES.items():
         if term in q_lower:
             # Merge rules into filters
@@ -631,6 +631,7 @@ def run_query(query: str) -> Dict:
     intent_json = parse_query_to_intent(query)
     result      = route_intent(intent_json)
     result["parsed_intent"] = intent_json
+    log_step("ENGINE: FINAL STRUCTURED RESULT", result)
     return result
 
 
@@ -707,7 +708,7 @@ def _compile_query(query) -> str:
     try:
         from sqlalchemy.dialects import sqlite
         sql = str(query.statement.compile(dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True}))
-        print(f"\n[SQL DEBUG] Generated SQL:\n{sql}\n", flush=True)
+        log_step("ENGINE: SQL COMPILE", sql)
         return sql
     except Exception as e:
         err = f"-- Error compiling SQL: {e}"
