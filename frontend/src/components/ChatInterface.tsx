@@ -138,48 +138,20 @@ export function ChatInterface({ onQueryAdded }: ChatInterfaceProps) {
           });
         }
 
-        // ── Debug panel: show real analytical intent and SQL ───────────
-        const intentDebug = data.intent || {};
-        const timings     = data.timings  || {};
-        const analytical  = data.analytical_intent || {};
-        const sqlArr = Array.isArray(data.sql) ? data.sql : (data.sql ? [data.sql] : []);
-        let retrievalSql = "N/A";
-        let analyticalSql = "N/A";
-
-        if (sqlArr.length >= 2) {
-          retrievalSql = sqlArr[0];
-          analyticalSql = sqlArr[1];
-        } else if (sqlArr.length === 1) {
-          const s = sqlArr[0].toLowerCase();
-          if (s.includes("avg(") || s.includes("count(") || s.includes("sum(") || s.includes("max(") || s.includes("min(")) {
-            analyticalSql = sqlArr[0];
-          } else {
-            retrievalSql = sqlArr[0];
-          }
-        }
+        // ── Simplified Debug Panel: Show Intent and SQL ─────────────────────
+        const intentDebug = data.intent || data.parsed_intent || {};
+        const timings     = data.timings || {};
+        const sql = Array.isArray(data.sql) ? data.sql[0] : data.sql;
 
         const debugLines = [
-          `High-level Intent : ${intentDebug.primary_intent || "unknown"}`,
+          `Primary Intent : ${intentDebug.primary_intent || intentDebug.intents?.[0] || "structured_query"}`,
           ``,
-          `# Step 1: LLM Intent (JSON)`,
-          `${JSON.stringify(analytical, null, 2)}`,
+          `# Generated SQL (SQLite)`,
+          `${sql || "N/A"}`,
           ``,
-          `# Step 2: Generated SQL`,
-          `This system uses two distinct SQL engines to ensure clinical accuracy:`,
-          ``,
-          `## 2a. Clinical Context Discovery (Retrieval)`,
-          `${retrievalSql}`,
-          ``,
-          `## 2b. Analytical Computation (Execution)`,
-          `${analyticalSql}`,
-          ``,
-          `# Results Information`,
-          `Patients matched  : ${
-            Array.isArray(data.patients) 
-              ? data.patients.length 
-              : (data.patients?.intent === "aggregation" || data.patients?.avg_age || data.patients?.count_patients ? "Cohort Found" : 0)
-          }`,
-          `Timings (s)       : router=${timings.router_llm ?? "-"} | db=${timings.structured_retrieval ?? "-"} | llm=${timings.synthesis_llm ?? "-"} | total=${timings.total ?? "-"}`,
+          `# Engine Metadata`,
+          `Filters Applied   : ${JSON.stringify(data.metadata?.filters_applied || {}, null, 2)}`,
+          `Timings (seconds) : total=${timings.total ?? "-"} | search=${timings.structured_engine ?? "-"} | synthesis=${timings.synthesis_llm ?? "-"}`,
         ].join("\n");
 
         const aiMsg: Message = {
