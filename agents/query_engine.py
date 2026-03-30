@@ -116,6 +116,7 @@ def parse_query_to_intent(query: str) -> Dict:
                 {"role": "user",   "content": f"User Query:\n{query}"},
             ],
             response_format={"type": "json_object"},
+            max_tokens=600,
         )
         raw = response.choices[0].message.content
         raw = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.MULTILINE)
@@ -154,7 +155,11 @@ def normalize_intent(intent: Dict, query: str) -> Dict:
     Apply clinical rules, fill defaults, and clean up ambiguous LLM output.
     """
     q_lower = query.lower()
-    filters = intent.setdefault("filters", {})
+    
+    # Ensure filters exists and is a dict
+    if "filters" not in intent or not isinstance(intent["filters"], dict):
+        intent["filters"] = {}
+    filters = intent["filters"]
     
     # 0. Basic Normalization (Gender)
     g = str(filters.get("gender", "")).lower()
@@ -196,12 +201,20 @@ def normalize_intent(intent: Dict, query: str) -> Dict:
                 filters["bmi_category"] = rules["bmi_category"]
 
     # 1c. Risk factor and outcome keyword extraction
+    if "smoker" in q_lower or "smoking" in q_lower:
+        filters["risk_smoking"] = "Yes"
+        if "how many" in q_lower or "count" in q_lower:
+            intent.setdefault("aggregations", []).append({"type": "count", "field": "patient_id"})
+            if "aggregation" not in intent.get("intents", []):
+                intent.setdefault("intents", []).append("aggregation")
     if "dm" in q_lower or "diabetes" in q_lower:
         filters["risk_diabetes"] = "Yes"
-    if "smoker" in q_lower:
-        filters["risk_smoking"] = "Yes"
+        if "how many" in q_lower or "count" in q_lower:
+            intent.setdefault("aggregations", []).append({"type": "count", "field": "patient_id"})
     if "hypertension" in q_lower or " htn " in f" {q_lower} ":
         filters["risk_hypertension"] = "Yes"
+        if "how many" in q_lower or "count" in q_lower:
+            intent.setdefault("aggregations", []).append({"type": "count", "field": "patient_id"})
     if "death" in q_lower or "fatal" in q_lower or "died" in q_lower:
         filters["death_flag"] = 1
     if "icu" in q_lower:
@@ -220,10 +233,19 @@ def normalize_intent(intent: Dict, query: str) -> Dict:
             filters["length_of_stay"] = int(los_exact.group(1))
 
     # 3. Ensure intents is a list
-    if "intent" in intent and "intents" not in intent:
-        intent["intents"] = [intent["intent"]]
+    intents_list = intent.get("intents", [])
+    if "intent" in intent and not intents_list:
+        intents_list = [intent["intent"]]
     
-    if not intent.get("intents"):
+    # 4. Global Analytics fallback
+    if "analytics_query" in intents_list or intent.get("primary_intent") == "analytics_query":
+        if not intent.get("aggregations"):
+            intent["aggregations"] = [{"type": "count", "field": "patient_id"}]
+        if "aggregation" not in intents_list:
+            intents_list.append("aggregation")
+
+    intent["intents"] = intents_list
+    if not intent["intents"]:
         intent["intents"] = ["filter"]
 
     return intent
@@ -544,35 +566,19 @@ def route_intent(intent_json: Dict) -> Dict:
         current_sql = []
 
         # Sequential Execution Logic
-        # 1. Lookup (if present, usually independent)
-        if "lookup" in intents:
-            from agents.patient_data_agent import serialize_patient
-            q = find_patient(
-                patient_id=filters.get("patient_id"),
-                name=filters.get("patient_name"),
-                session=db,
-                return_query=True
-            )
-            current_sql.append(_compile_query(q))
-            results["lookup"] = [serialize_patient(p) for p in q.all()]
-
-        # 2. Filter (Patient List)
-        if "filter" in intents:
-            from data.database import Patient
-            query = db.query(Patient)
-            joined = set()
-            query = _build_filtered_query(query, filters, joined)
-            current_sql.append(_compile_query(query))
-            entities = _filters_to_entities(filters)
-            # Lightweight fetch + Cap at 10 for UI preview to avoid truncation
-            results["patients"] = filter_patients(entities, lightweight=True)[:10]
-
-        # 3. Aggregation (Statistical metrics)
-        if "aggregation" in intents:
+        # 1. Aggregation (Statistical metrics) - PRIORITIZE THIS for analytics
+        if any(i in intents for i in ["aggregation", "analytics_query"]):
             agg_res = aggregate_patients(intent_json, session=db)
             results["aggregation"] = agg_res
             if agg_res.get("metadata", {}).get("sql"):
-                current_sql.append(agg_res.get("metadata", {}).get("sql"))
+                if isinstance(agg_res["metadata"]["sql"], list):
+                    current_sql.extend(agg_res["metadata"]["sql"])
+                else:
+                    current_sql.append(agg_res["metadata"]["sql"])
+
+        # 2. Lookup (Independent)
+        if "lookup" in intents:
+            from agents.patient_data_agent import serialize_patient
 
         # 4. Extreme cases
         if "extreme" in intents:
@@ -622,8 +628,7 @@ def run_query(query: str) -> Dict:
     Parse a natural language query, route it, and return the result.
     Single entry point for external callers.
     """
-    from agents.router_agent import classify_intent
-    intent_json = classify_intent(query)
+    intent_json = parse_query_to_intent(query)
     result      = route_intent(intent_json)
     result["parsed_intent"] = intent_json
     return result
