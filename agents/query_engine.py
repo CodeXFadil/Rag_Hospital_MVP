@@ -21,7 +21,7 @@ from sqlalchemy import func
 from openai import OpenAI
 from dotenv import load_dotenv
 
-from .logger import log_step
+from agents.logger import log_step
 
 from data.database import (
     get_db_session,

@@ -8,7 +8,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 
 # Local Imports
-from .logger import log_step
+from agents.logger import log_step
 
 load_dotenv()
 
